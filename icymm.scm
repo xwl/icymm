@@ -30,10 +30,11 @@
 
 ;; config
 (define icymm-server "irc.debian.org")
-(define icymm-nick "icymm")
+(define icymm-nick "mmicy")
 (define icymm-channel "#emacs-cn")
 
 (define icymm-connection (irc:connection server: icymm-server nick: icymm-nick))
+(define icymm-start-time #f)
 
 ;;; Data Table
 
@@ -61,14 +62,20 @@
       (irc:say icymm-connection response (irc:message-sender msg))
       (irc:say icymm-connection response)))
 
+(define (icymm-add-privmsg-handler! command callback)
+ (irc:add-message-handler! icymm-connection
+                           callback
+                           command: "PRIVMSG"
+                           body: (lambda (msg)
+                                   (string-match
+                                    (regexp (format "PRIVMSG.*~A.*~A" icymm-nick command))
+                                    (irc:message-body msg)))))
+
 
 ;;; Callbacks
 
 (define (icymm-help-callback msg)
-  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,joke"))
-
-(define (icymm-time-callback msg)
-  (icymm-response msg (string-append "东京时间：" (seconds->string (current-seconds)))))
+  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,joke ,uptime"))
 
 (define (icymm-default-callback msg)
   (let* ((db '("不懂你在说什么呃… :P"
@@ -130,84 +137,62 @@
   ;; TODO, get html
   )
 
+;; TODO: 如何检测无限循环等问题？
+(define (icymm-eval-callback msg)
+  (let* ((body (irc:message-body msg))
+         (positions (string-match-positions (regexp ",eval") body)))
+    (with-input-from-string (substring body (cadr (car positions)))
+      (lambda ()
+        (let ((s (read)))
+          (icymm-response
+           msg
+           (format "=> ~A"
+                   ;; exn 是 exception 的标识。
+                   (with-output-to-string
+                     (lambda ()
+                       (handle-exceptions exn "干啥呢，嘿嘿！" (eval s)))))))))))
+
+(define (icymm-time-callback msg)
+  (icymm-response msg (string-append "东京时间：" (seconds->string (current-seconds)))))
+
+(define (icymm-uptime-callback msg)
+  (icymm-response msg
+                  (apply format "俺已经持续上线 ~A 天 ~A 小时 ~A 分又 ~A 秒啦！"
+                         (let ((diff (inexact->exact (- (current-seconds) icymm-start-time))))
+                           (list (quotient diff 86400)
+                                 (quotient (remainder diff 86400) 3600)
+                                 (quotient (remainder (remainder diff 86400) 3600) 60)
+                                 (remainder (remainder (remainder diff 86400) 3600) 60))))))
+
 
 ;;; Main
 
 (define (main)
   (parameterize
    ((tcp-read-timeout #f))
+
+   (set! icymm-start-time (current-seconds))
+
    (irc:connect icymm-connection)
 
    (irc:join icymm-connection icymm-channel)
 
-   (irc:add-message-handler! icymm-connection
-                             icymm-help-callback
-                             command: "PRIVMSG"
-                             body: (lambda (msg)
-                                     (string-match
-                                      (regexp "PRIVMSG.*icymm.*,help")
-                                      (irc:message-body msg))))
-
-   (irc:add-message-handler! icymm-connection
-                             icymm-time-callback
-                             command: "PRIVMSG"
-                             body: (lambda (msg)
-                                     (string-match
-                                      (regexp "PRIVMSG.*icymm.*,time")
-                                      (irc:message-body msg))))
-
-   (irc:add-message-handler! icymm-connection
-                             icymm-emacs-cn-callback
-                             command: "PRIVMSG"
-                             body: (lambda (msg)
-                                     (string-match
-                                      (regexp "PRIVMSG.*icymm.*,emacs-cn")
-                                      (irc:message-body msg))))
-
-   (irc:add-message-handler! icymm-connection
-                             icymm-tell-callback
-                             command: "PRIVMSG"
-                             body: (lambda (msg)
-                                     (string-match
-                                      (regexp "PRIVMSG.*icymm.*,tell")
-                                      (irc:message-body msg))))
+   (icymm-add-privmsg-handler! ",help" icymm-help-callback)
+   (icymm-add-privmsg-handler! ",time" icymm-time-callback)
+   (icymm-add-privmsg-handler! ",emacs-cn" icymm-emacs-cn-callback)
+   (icymm-add-privmsg-handler! ",tell" icymm-tell-callback)
+   (icymm-add-privmsg-handler! ",uptime" icymm-uptime-callback)
+   (icymm-add-privmsg-handler! ",你好" icymm-你好-callback)
+   (icymm-add-privmsg-handler! "靠" icymm-dirty-callback)
+   (icymm-add-privmsg-handler! ",joke" icymm-joke-callback)
+   ;; (icymm-add-privmsg-handler ",eval" icymm-eval-callback)
 
    (irc:add-message-handler! icymm-connection
                              icymm-join-callback
                              command: "JOIN")
 
-   (irc:add-message-handler! icymm-connection
-                             icymm-你好-callback
-                             command: "PRIVMSG"
-                             body: (lambda (msg)
-                                     (string-match
-                                      (regexp "PRIVMSG.*icymm.*你好")
-                                      (irc:message-body msg))))
-
-   (irc:add-message-handler! icymm-connection
-                             icymm-dirty-callback
-                             command: "PRIVMSG"
-                             body: (lambda (msg)
-                                     (string-match
-                                      (regexp "PRIVMSG.*icymm.*靠")
-                                      (irc:message-body msg))))
-
-   (irc:add-message-handler! icymm-connection
-                             icymm-joke-callback
-                             command: "PRIVMSG"
-                             body: (lambda (msg)
-                                     (string-match
-                                      (regexp "PRIVMSG.*icymm.*,joke")
-                                      (irc:message-body msg))))
-
    ;; default 放在最后就可以了？
-   (irc:add-message-handler! icymm-connection
-                             icymm-default-callback
-                             command: "PRIVMSG"
-                             body: (lambda (msg)
-                                     (string-match
-                                      (regexp "PRIVMSG.*icymm[^,]+")
-                                      (irc:message-body msg))))
+   (icymm-add-privmsg-handler! "[^,]+" icymm-default-callback)
 
    (irc:run-message-loop icymm-connection debug: #t)))
 
