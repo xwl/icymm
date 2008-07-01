@@ -26,7 +26,7 @@
 
 ;;; Code:
 
-(use posix irc format-modular regex srfi-1)
+(use posix tcp irc format-modular regex srfi-1)
 
 ;; config
 (define icymm-server "irc.debian.org")
@@ -68,7 +68,7 @@
                            command: "PRIVMSG"
                            body: (lambda (msg)
                                    (string-match
-                                    (regexp (format "PRIVMSG.*~A.*~A" icymm-nick command))
+                                    (regexp (format "PRIVMSG.*(:| )~A(:| ).*~A" icymm-nick command))
                                     (irc:message-body msg)))))
 
 
@@ -105,7 +105,7 @@
                 (content (substring body (cadr (car positions)))))
             (icymm-tell-table-add! future-receiver sender content)
             (icymm-response msg
-                              (format "知道了，帮你记下了。下次 ~A 上线的时候，代为转告。"
+                              (format "知道了，帮你记下了。下次 ~A 上线的时候，代为转告咯！"
                                       future-receiver))))))
 
 (define (icymm-join-callback msg)
