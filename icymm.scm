@@ -47,11 +47,12 @@
 
 (define (icymm-tell-table-add! receiver sender msg)
   (set! icymm-tell-table
-        (cons (list receiver sender msg) icymm-tell-table)))
+        (append icymm-tell-table (list (list receiver sender msg)))))
 
-(define (icymm-tell-table-remove! receiver)
-  (set! icymm-tell-table
-        (alist-delete receiver icymm-tell-table)))
+(define (icymm-tell-table-remove! record)
+  ;; Not alist-delete here, since a user may recieve multiple messages
+  ;; from different people.
+  (set! icymm-tell-table (delete record icymm-tell-table)))
 
 (define (icymm-response msg response)
 ;;   (display (format "(sender, receiver): (~A, ~A)\n"
@@ -70,6 +71,10 @@
                                    (string-match
                                     (regexp (format "PRIVMSG.*(:| )~A(:| ).*~A" icymm-nick command))
                                     (irc:message-body msg)))))
+
+(define (icymm-format-url url)
+  "在 URL 前加一些前缀。"
+ (string-append "没记错的话，它是：" url))
 
 
 ;;; Callbacks
@@ -93,7 +98,7 @@
     (icymm-response msg (list-ref db i))))
 
 (define (icymm-emacs-cn-callback msg)
-  (icymm-response msg "没记错的话，它是：http://www.emacs.cn"))
+  (icymm-response msg  (icymm-format-url "http://www.emacs.cn")))
 
 (define (icymm-tell-callback msg)
   "发离线消息。"
@@ -123,7 +128,7 @@
                      msg
                      (format "~A: ~A 给你留言了：~S"
                              who (list-ref record 1) (list-ref record 2)))
-                    (icymm-tell-table-remove! who)
+                    (icymm-tell-table-remove! record)
                     (loop)))))))
 
 (define (icymm-你好-callback msg)
@@ -164,6 +169,9 @@
                                  (quotient (remainder (remainder diff 86400) 3600) 60)
                                  (remainder (remainder (remainder diff 86400) 3600) 60))))))
 
+(define (icymm-emms-callback msg)
+  (icymm-response msg "Emacs 中的超级音频、视频播放器！赶快来用吧！=> http://www.gnu.org/software/emms"))
+
 
 ;;; Main
 
@@ -186,6 +194,7 @@
    (icymm-add-privmsg-handler! "靠" icymm-dirty-callback)
    (icymm-add-privmsg-handler! ",joke" icymm-joke-callback)
    ;; (icymm-add-privmsg-handler ",eval" icymm-eval-callback)
+   (icymm-add-privmsg-handler! ",emms" icymm-emms-callback)
 
    (irc:add-message-handler! icymm-connection
                              icymm-join-callback
