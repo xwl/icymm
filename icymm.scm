@@ -80,7 +80,7 @@
 ;;; Callbacks
 
 (define (icymm-help-callback msg)
-  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,joke ,uptime"))
+  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,joke ,uptime ,emms ,paste ..."))
 
 (define (icymm-default-callback msg)
   (let* ((db '("不懂你在说什么呃… :P"
@@ -104,7 +104,7 @@
   "发离线消息。"
   (let* ((sender (irc:message-sender msg))
          (body (irc:message-body msg))
-         (positions (string-match-positions (regexp ",tell ([a-zA-Z_]+)") body)))
+         (positions (string-match-positions (regexp ",tell ([a-zA-Z_]+) ?") body)))
     (when positions
           (let ((future-receiver (apply substring body (cadr positions)))
                 (content (substring body (cadr (car positions)))))
@@ -172,6 +172,9 @@
 (define (icymm-emms-callback msg)
   (icymm-response msg "Emacs 中的超级音频、视频播放器！赶快来用吧！=> http://www.gnu.org/software/emms"))
 
+(define (icymm-paste-callback msg)
+  (icymm-response msg "想贴好多好多哦？来这里，让你一次贴个够！=> http://paste.lisp.org/"))
+
 
 ;;; Main
 
@@ -185,16 +188,17 @@
 
    (irc:join icymm-connection icymm-channel)
 
-   (icymm-add-privmsg-handler! ",help" icymm-help-callback)
-   (icymm-add-privmsg-handler! ",time" icymm-time-callback)
+   (icymm-add-privmsg-handler! ",help"     icymm-help-callback)
+   (icymm-add-privmsg-handler! ",time"     icymm-time-callback)
    (icymm-add-privmsg-handler! ",emacs-cn" icymm-emacs-cn-callback)
-   (icymm-add-privmsg-handler! ",tell" icymm-tell-callback)
-   (icymm-add-privmsg-handler! ",uptime" icymm-uptime-callback)
-   (icymm-add-privmsg-handler! ",你好" icymm-你好-callback)
-   (icymm-add-privmsg-handler! "靠" icymm-dirty-callback)
-   (icymm-add-privmsg-handler! ",joke" icymm-joke-callback)
-   ;; (icymm-add-privmsg-handler ",eval" icymm-eval-callback)
-   (icymm-add-privmsg-handler! ",emms" icymm-emms-callback)
+   (icymm-add-privmsg-handler! ",tell"     icymm-tell-callback)
+   (icymm-add-privmsg-handler! ",uptime"   icymm-uptime-callback)
+   (icymm-add-privmsg-handler! ",你好"     icymm-你好-callback)
+   (icymm-add-privmsg-handler! "靠"        icymm-dirty-callback)
+   (icymm-add-privmsg-handler! ",joke"     icymm-joke-callback)
+   ;; (icymm-add-privmsg-handler  ",eval"     icymm-eval-callback)
+   (icymm-add-privmsg-handler! ",emms"     icymm-emms-callback)
+   (icymm-add-privmsg-handler! ",paste"    icymm-paste-callback)
 
    (irc:add-message-handler! icymm-connection
                              icymm-join-callback
