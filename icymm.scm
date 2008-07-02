@@ -69,7 +69,7 @@
                            command: "PRIVMSG"
                            body: (lambda (msg)
                                    (string-match
-                                    (regexp (format "PRIVMSG.*(:| )~A(:| ).*~A" icymm-nick command))
+                                    (regexp (format "PRIVMSG.*(:| )~A:.*~A" icymm-nick command))
                                     (irc:message-body msg)))))
 
 (define (icymm-format-url url)
