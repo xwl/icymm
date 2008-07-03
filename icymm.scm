@@ -173,7 +173,7 @@
   (icymm-response msg "Emacs 中的超级音频、视频播放器！赶快来用吧！=> http://www.gnu.org/software/emms"))
 
 (define (icymm-paste-callback msg)
-  (icymm-response msg "想贴好多好多哦？来这里，让你一次贴个够！=> http://paste.lisp.org/, http://paste.ubuntu.org.cn (支持图片)"))
+  (icymm-response msg "想贴好多好多哦？来这里，让你一次贴个够！=> wgetpaste, http://paste.lisp.org/, http://paste.ubuntu.org.cn (支持图片)"))
 
 
 ;;; Main
