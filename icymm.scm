@@ -26,12 +26,12 @@
 
 ;;; Code:
 
-(use posix tcp irc format-modular regex srfi-1)
+(use posix tcp irc format-modular regex srfi-1 srfi-13)
 
 ;; config
 (define icymm-server "irc.debian.org")
-(define icymm-nick "icymm")
-(define icymm-channel "#emacs-cn")
+(define icymm-nick "icymm-test")
+(define icymm-channel "#test")
 
 (define icymm-connection (irc:connection server: icymm-server nick: icymm-nick))
 (define icymm-start-time #f)
@@ -64,13 +64,16 @@
       (irc:say icymm-connection response)))
 
 (define (icymm-add-privmsg-handler! command callback)
- (irc:add-message-handler! icymm-connection
-                           callback
-                           command: "PRIVMSG"
-                           body: (lambda (msg)
-                                   (string-match
-                                    (regexp (format "PRIVMSG.*(:| )~A:.*~A" icymm-nick command))
-                                    (irc:message-body msg)))))
+  (irc:add-message-handler!
+   icymm-connection
+   callback
+   command: "PRIVMSG"
+   body: (lambda (msg)
+           (string-match
+            (regexp
+             (format "PRIVMSG #.*:~A:.*~A|PRIVMSG ~A .*~A"
+                     icymm-nick command icymm-nick command))
+            (irc:message-body msg)))))
 
 (define (icymm-format-url url)
   "在 URL 前加一些前缀。"
@@ -138,9 +141,35 @@
   (icymm-response msg "你骂人？！"))
 
 (define (icymm-joke-callback msg)
-  (icymm-response msg "帮你找笑话-ing，耐心等会哦…(TODO)")
-  ;; TODO, get html
-  )
+  (icymm-response msg "帮你找笑话-ing，耐心等会哦…")
+  (let ((max-tries 3))
+    (define (iter try)
+      (if (> try max-tries)
+          "已经尽力了，还是没找到笑话… :("
+          (with-input-from-pipe
+           (format "w3m -dump http://www.qiushibaike.com/qiushi/number/~A.html" (random 30000))
+           (lambda ()
+             (let loop ((beg #f)
+                        (end #f)
+                        (line "")
+                        (ret ""))
+               (set! line (read-line))
+               (cond
+                ((or end (string-match (regexp "很抱歉，糗事#[0-9]+不存在") line))
+                 (if (string-null? ret)
+                     (iter (+ 1 try))
+                     ret))
+
+                ((string-match (regexp "< 上一糗事") line)
+                 (loop beg #t line ret))
+                (beg
+                 (loop beg end line (string-append ret line)))
+                ((string-match (regexp "糗事#[0-9]+") line)
+                 (read-line)            ; skip date
+                 (loop #t end line (string-append ret "(" line ") ")))
+                (else
+                 (loop beg end line ret))))))))
+    (icymm-response msg (string-append "done => " (iter 0)))))
 
 ;; TODO: 如何检测无限循环等问题？
 (define (icymm-eval-callback msg)
