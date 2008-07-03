@@ -141,7 +141,7 @@
   (icymm-response msg "你骂人？！"))
 
 (define (icymm-joke-callback msg)
-  (icymm-response msg "帮你找笑话-ing，耐心等会哦…")
+  ;; (icymm-response msg "帮你找笑话-ing，耐心等会哦…")
   (let ((max-tries 3))
     (define (iter try)
       (if (> try max-tries)
@@ -159,7 +159,6 @@
                  (if (string-null? ret)
                      (iter (+ 1 try))
                      ret))
-
                 ((string-match (regexp "< 上一糗事") line)
                  (loop beg #t line ret))
                 (beg
@@ -169,7 +168,7 @@
                  (loop #t end line (string-append ret "(" line ") ")))
                 (else
                  (loop beg end line ret))))))))
-    (icymm-response msg (string-append "done => " (iter 0)))))
+    (icymm-response msg (iter 0))))
 
 ;; TODO: 如何检测无限循环等问题？
 (define (icymm-eval-callback msg)
