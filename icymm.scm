@@ -30,8 +30,8 @@
 
 ;; config
 (define icymm-server "irc.debian.org")
-(define icymm-nick "icymm-test")
-(define icymm-channel "#test")
+(define icymm-nick "icymm")
+(define icymm-channel "#emacs-cn")
 
 (define icymm-connection (irc:connection server: icymm-server nick: icymm-nick))
 (define icymm-start-time #f)
