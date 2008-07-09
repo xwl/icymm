@@ -32,8 +32,10 @@
 (define icymm-server "irc.debian.org")
 (define icymm-nick "icymm")
 (define icymm-channel "#emacs-cn")
+(define icymm-password #f)
+(define icymm-real-name "湘琴")
 
-(define icymm-connection (irc:connection server: icymm-server nick: icymm-nick))
+(define icymm-connection #f)
 (define icymm-start-time #f)
 
 ;;; Data Table
@@ -224,7 +226,9 @@
                 (args:make-option (n nick) #:required "Default is: icymm"
                                   (set! icymm-nick arg))
                 (args:make-option (c channel) #:required "Default is: #emacs-cn"
-                                  (set! icymm-channel arg))))
+                                  (set! icymm-channel arg))
+                (args:make-option (p password) #:required "Default is: #f"
+                                  (set! icymm-password arg))))
 
     (args:parse (command-line-arguments) opts))
 
@@ -233,9 +237,17 @@
 
    (set! icymm-start-time (current-seconds))
 
+   (set! icymm-connection (irc:connection server: icymm-server
+                                          nick: icymm-nick
+                                          password: icymm-password
+                                          real-name: icymm-real-name))
+
    (irc:connect icymm-connection)
 
    (irc:join icymm-connection icymm-channel)
+
+   (when icymm-password
+         (irc:command icymm-connection (string-append "identify " icymm-password)))
 
    (for-each
     (lambda (command-callback)
