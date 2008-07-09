@@ -26,7 +26,7 @@
 
 ;;; Code:
 
-(use posix tcp irc format-modular regex srfi-1 srfi-13)
+(use posix tcp irc format-modular regex srfi-1 srfi-13 args)
 
 ;; config
 (define icymm-server "irc.debian.org")
@@ -207,6 +207,27 @@
 ;;; Main
 
 (define (main)
+  (let ((opts '()))
+    (define (usage)
+      (with-output-to-port (current-error-port)
+        (lambda ()
+          (print "Usage: " (car (argv)) " [OPTIONS...]")
+          (newline)
+          (print (args:usage opts))))
+      (exit 1))
+
+    (set! opts (list
+                (args:make-option (h help) #:none "Show this help"
+                                  (usage))
+                (args:make-option (s server) #:required "Default is: irc.debian.org"
+                                  (set! icymm-server arg))
+                (args:make-option (n nick) #:required "Default is: icymm"
+                                  (set! icymm-nick arg))
+                (args:make-option (c channel) #:required "Default is: #emacs-cn"
+                                  (set! icymm-channel arg))))
+
+    (args:parse (command-line-arguments) opts))
+
   (parameterize
    ((tcp-read-timeout #f))
 
@@ -216,17 +237,20 @@
 
    (irc:join icymm-connection icymm-channel)
 
-   (icymm-add-privmsg-handler! ",help"     icymm-help-callback)
-   (icymm-add-privmsg-handler! ",time"     icymm-time-callback)
-   (icymm-add-privmsg-handler! ",emacs-cn" icymm-emacs-cn-callback)
-   (icymm-add-privmsg-handler! ",tell"     icymm-tell-callback)
-   (icymm-add-privmsg-handler! ",uptime"   icymm-uptime-callback)
-   (icymm-add-privmsg-handler! ",你好"     icymm-你好-callback)
-   (icymm-add-privmsg-handler! "靠"        icymm-dirty-callback)
-   (icymm-add-privmsg-handler! ",joke"     icymm-joke-callback)
-   ;; (icymm-add-privmsg-handler  ",eval"     icymm-eval-callback)
-   (icymm-add-privmsg-handler! ",emms"     icymm-emms-callback)
-   (icymm-add-privmsg-handler! ",paste"    icymm-paste-callback)
+   (for-each
+    (lambda (command-callback)
+      (icymm-add-privmsg-handler! (car command-callback) (cdr command-callback)))
+    `((",help"     . ,icymm-help-callback)
+      (",time"     . ,icymm-time-callback)
+      (",emacs-cn" . ,icymm-emacs-cn-callback)
+      (",tell"     . ,icymm-tell-callback)
+      (",uptime"   . ,icymm-uptime-callback)
+      (",你好"     . ,icymm-你好-callback)
+      ("靠"        . ,icymm-dirty-callback)
+      (",joke"     . ,icymm-joke-callback)
+      ;; (  ",eval"     . ,icymm-eval-callback)
+      (",emms"     . ,icymm-emms-callback)
+      (",paste"    . ,icymm-paste-callback)))
 
    (irc:add-message-handler! icymm-connection
                              icymm-join-callback
