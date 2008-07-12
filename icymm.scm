@@ -26,9 +26,9 @@
 
 ;;; Code:
 
-(use posix tcp irc format-modular regex srfi-1 srfi-13 args)
+(use posix tcp irc format-modular regex srfi-1 srfi-13 args srfi-18)
 
-;; config
+;;; Global Variables
 (define icymm-server "irc.debian.org")
 (define icymm-nick "icymm")
 (define icymm-channel "#emacs-cn")
@@ -38,23 +38,43 @@
 (define icymm-connection #f)
 (define icymm-start-time #f)
 
+
 ;;; Data Table
 
 (define (icymm-receiver-is-me? receiver)
   (equal? receiver (irc:connection-nick icymm-connection)))
 
 ;; '(receiver sender msg)
-(define icymm-tell-table
-  '())
+(define icymm-tell-table '())
+
+(define icymm-tell-table-cache-file "~/.icymm-cache")
+
+(define (icymm-tell-table-save)
+  "Save `icymm-tell-table' to `icymm-tell-table-cache-file'."
+  (with-output-to-file icymm-tell-table-cache-file
+    (lambda ()
+      (print
+       (format
+        ";; -*- scheme -*-
+
+ (set! icymm-tell-table '~S)"
+        icymm-tell-table)))))
+
+(define (icymm-tell-table-load)
+  "Load `icymm-tell-table' from `icymm-tell-table-cache-file'."
+  (when (file-read-access? icymm-tell-table-cache-file)
+    (load icymm-tell-table-cache-file)))
 
 (define (icymm-tell-table-add! receiver sender msg)
   (set! icymm-tell-table
-        (append icymm-tell-table (list (list receiver sender msg)))))
+        (append icymm-tell-table (list (list receiver sender msg))))
+  (icymm-tell-table-save))
 
 (define (icymm-tell-table-remove! record)
   ;; Not alist-delete here, since a user may recieve multiple messages
   ;; from different people.
-  (set! icymm-tell-table (delete record icymm-tell-table)))
+  (set! icymm-tell-table (delete record icymm-tell-table))
+  (icymm-tell-table-save))
 
 (define (icymm-response msg response)
 ;;   (display (format "(sender, receiver): (~A, ~A)\n"
@@ -65,7 +85,7 @@
       (irc:say icymm-connection response (irc:message-sender msg))
       (irc:say icymm-connection response)))
 
-(define (icymm-add-privmsg-handler! command callback)
+(define (icymm-add-privmsg-handler! command callback tag)
   (irc:add-message-handler!
    icymm-connection
    callback
@@ -73,16 +93,19 @@
    body: (lambda (msg)
            (string-match
             (regexp
-             (format "PRIVMSG #.*:~A:.*~A|PRIVMSG ~A .*~A"
-                     icymm-nick command icymm-nick command))
-            (irc:message-body msg)))))
+             (format "PRIVMSG ~A :~A: ~A|PRIVMSG ~A :~A|PRIVMSG ~A :~A"
+                     icymm-channel icymm-nick command
+                     icymm-nick command
+                     icymm-channel command))
+            (irc:message-body msg)))
+   tag: tag))
+
+
+;;; Callbacks
 
 (define (icymm-format-url url)
   "在 URL 前加一些前缀。"
  (string-append "没记错的话，它是：" url))
-
-
-;;; Callbacks
 
 (define (icymm-help-callback msg)
   (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,joke ,uptime ,emms ,paste ..."))
@@ -111,12 +134,12 @@
          (body (irc:message-body msg))
          (positions (string-match-positions (regexp ",tell ([a-zA-Z_]+) ?") body)))
     (when positions
-          (let ((future-receiver (apply substring body (cadr positions)))
-                (content (substring body (cadr (car positions)))))
-            (icymm-tell-table-add! future-receiver sender content)
-            (icymm-response msg
-                              (format "知道了，帮你记下了。下次 ~A 上线的时候，代为转告咯！"
-                                      future-receiver))))))
+      (let ((future-receiver (apply substring body (cadr positions)))
+            (content (substring body (cadr (car positions)))))
+        (icymm-tell-table-add! future-receiver sender content)
+        (icymm-response msg
+                        (format "收到，下次 ~A 上线的时候，代为转告！"
+                                future-receiver))))))
 
 (define (icymm-join-callback msg)
   (let* ((body (irc:message-body msg))
@@ -147,7 +170,7 @@
   (let ((max-tries 3))
     (define (iter try)
       (if (> try max-tries)
-          "已经尽力了，还是没找到笑话… :("
+          "你 rp 不行啊，这回竟然没找到笑话…"
           (with-input-from-pipe
            (format "w3m -dump http://www.qiushibaike.com/qiushi/number/~A.html" (random 30000))
            (lambda ()
@@ -203,12 +226,27 @@
   (icymm-response msg "Emacs 中的超级音频、视频播放器！赶快来用吧！=> http://www.gnu.org/software/emms"))
 
 (define (icymm-paste-callback msg)
-  (icymm-response msg "想贴好多好多哦？来这里，让你一次贴个够！=> wgetpaste, http://paste.lisp.org/, http://paste.ubuntu.org.cn (支持图片)"))
+  (icymm-response msg "贴贴贴！=> xwl-wgetpaste-ubuntu-cn, http://paste.ubuntu.org.cn (支持图片), wgetpaste"))
 
 
 ;;; Main
 
-(define (main)
+(define (icymm-load-rc)
+  (let ((rc "~/.icymmrc"))
+    (if (file-read-access? rc)
+        (load rc)
+      (with-output-to-file rc
+        (lambda ()
+          (display ";; -*- scheme -*-
+
+ (set! icymm-server \"irc.debian.org\")
+ (set! icymm-nick \"icymm\")
+ (set! icymm-channel \"#emacs-cn\")
+ (set! icymm-password \"bot password\")
+ (set! icymm-real-name \"湘琴\")
+"))))))
+
+(define (icymm-parse-command-line)
   (let ((opts '()))
     (define (usage)
       (with-output-to-port (current-error-port)
@@ -230,51 +268,57 @@
                 (args:make-option (p password) #:required "Default is: #f"
                                   (set! icymm-password arg))))
 
-    (args:parse (command-line-arguments) opts))
+    (args:parse (command-line-arguments) opts)))
 
-  (parameterize
-   ((tcp-read-timeout #f))
+(define (main)
+  (icymm-load-rc)
 
-   (set! icymm-start-time (current-seconds))
+  (icymm-parse-command-line)
 
-   (set! icymm-connection (irc:connection server: icymm-server
-                                          nick: icymm-nick
-                                          password: icymm-password
-                                          real-name: icymm-real-name))
+  (icymm-tell-table-load)
 
-   (irc:connect icymm-connection)
+  (parameterize ((tcp-read-timeout #f))
+    (set! icymm-start-time (current-seconds))
 
-   (irc:join icymm-connection icymm-channel)
+    (set! icymm-connection (irc:connection server: icymm-server
+                                           nick: icymm-nick
+                                           password: icymm-password
+                                           real-name: icymm-real-name))
+    (irc:connect icymm-connection)
 
-   (when icymm-password
-         (irc:command icymm-connection (string-append "identify " icymm-password)))
+    (irc:join icymm-connection icymm-channel)
 
-   (for-each
-    (lambda (command-callback)
-      (icymm-add-privmsg-handler! (car command-callback) (cdr command-callback)))
-    `((",help"     . ,icymm-help-callback)
-      (",time"     . ,icymm-time-callback)
-      (",emacs-cn" . ,icymm-emacs-cn-callback)
-      (",tell"     . ,icymm-tell-callback)
-      (",uptime"   . ,icymm-uptime-callback)
-      (",你好"     . ,icymm-你好-callback)
-      ("靠"        . ,icymm-dirty-callback)
-      (",joke"     . ,icymm-joke-callback)
-      ;; (  ",eval"     . ,icymm-eval-callback)
-      (",emms"     . ,icymm-emms-callback)
-      (",paste"    . ,icymm-paste-callback)))
+    (when icymm-password
+      (irc:command icymm-connection (string-append "identify " icymm-password)))
 
-   (irc:add-message-handler! icymm-connection
-                             icymm-join-callback
-                             command: "JOIN")
+    (for-each (lambda (i) (apply icymm-add-privmsg-handler! i))
+              `((",help"     ,icymm-help-callback     help)
+                (",time"     ,icymm-time-callback     time)
+                (",emacs-cn" ,icymm-emacs-cn-callback emacs-cn)
+                (",tell"     ,icymm-tell-callback     tell)
+                (",uptime"   ,icymm-uptime-callback   uptime)
+                (",你好"     ,icymm-你好-callback     nihao)
+                ("靠"        ,icymm-dirty-callback    dirty)
+                (",joke"     ,icymm-joke-callback     joke)
+                (",emms"     ,icymm-emms-callback     emms)
+                (",paste"    ,icymm-paste-callback    paste)))
 
-   ;; default 放在最后就可以了？
-   (icymm-add-privmsg-handler! "[^,]+" icymm-default-callback)
+    (irc:add-message-handler! icymm-connection
+                              icymm-join-callback
+                              command: "JOIN"
+                              tag: 'join)
 
-   (irc:run-message-loop icymm-connection debug: #t)))
+    ;; default 放在最后就可以了？
+    (icymm-add-privmsg-handler! (format "~A: [^,]+|~A :[^,]+" icymm-nick icymm-nick)
+                                icymm-default-callback
+                                'default)
+
+    ;; Run this program in csi, then we can debug and modify it on the fly!!
+    (thread-start! (lambda () (irc:run-message-loop icymm-connection debug: #t)))
+
+    ))
 
 ;; Let's go!
 (main)
-
 
 ;;; icymm.scm ends here
