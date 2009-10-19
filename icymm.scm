@@ -1,6 +1,6 @@
 ;;; icymm.scm --- an irc bot for #emacs-cn@irc.debian.org
 
-;; Copyright (C) 2008 William Xu
+;; Copyright (C) 2008 2009 William Xu
 
 ;; Author: William Xu <william.xwl@gmail.com>
 ;; Version: 0.2a
@@ -26,7 +26,8 @@
 
 ;;; Code:
 
-(use posix tcp irc format-modular regex srfi-1 srfi-13 args srfi-18)
+(use posix tcp irc regex srfi-1 srfi-13 args srfi-18 
+     http-client html-parser sxpath)
 
 ;;; Global Variables
 (define icymm-server "irc.debian.org")
@@ -91,7 +92,7 @@
    callback
    command: "PRIVMSG"
    body: (lambda (msg)
-           (string-match
+           (string-search
             (regexp
              (format "PRIVMSG ~A :~A: ~A|PRIVMSG ~A :~A|PRIVMSG ~A :~A"
                      icymm-channel icymm-nick command
@@ -108,7 +109,8 @@
  (string-append "没记错的话，它是：" url))
 
 (define (icymm-help-callback msg)
-  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,joke ,uptime ,emms ,paste ..."))
+  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,uptime ,emms ,paste ..."))
+;; TODO fix ,joke 
 
 (define (icymm-default-callback msg)
   (let* ((db '("不懂你在说什么呃… :P"
@@ -132,7 +134,7 @@
   "发离线消息。"
   (let* ((sender (irc:message-sender msg))
          (body (irc:message-body msg))
-         (positions (string-match-positions (regexp ",tell ([a-zA-Z_]+) ?") body)))
+         (positions (string-search-positions (regexp ",tell ([a-zA-Z_]+) ?") body)))
     (when positions
       (let ((future-receiver (apply substring body (cadr positions)))
             (content (substring body (cadr (car positions)))))
@@ -143,7 +145,7 @@
 
 (define (icymm-join-callback msg)
   (let* ((body (irc:message-body msg))
-         (positions (string-match-positions (regexp ":([a-zA-Z_]+)!") body)))
+         (positions (string-search-positions (regexp ":([a-zA-Z_]+)!") body)))
     ;; (unless positions (icymm-response msg "not matched?"))
     (when positions
           ;; (icymm-response msg "matched?")
@@ -180,15 +182,15 @@
                         (ret ""))
                (set! line (read-line))
                (cond
-                ((or end (string-match (regexp "很抱歉，糗事#[0-9]+不存在") line))
+                ((or end (string-search (regexp "很抱歉，糗事#[0-9]+不存在") line))
                  (if (string-null? ret)
                      (iter (+ 1 try))
                      ret))
-                ((string-match (regexp "< 上一糗事") line)
+                ((string-search (regexp "< 上一糗事") line)
                  (loop beg #t line ret))
                 (beg
                  (loop beg end line (string-append ret line)))
-                ((string-match (regexp "糗事#[0-9]+") line)
+                ((string-search (regexp "糗事#[0-9]+") line)
                  (read-line)            ; skip date
                  (loop #t end line (string-append ret "(" line ") ")))
                 (else
@@ -198,7 +200,7 @@
 ;; TODO: 如何检测无限循环等问题？
 (define (icymm-eval-callback msg)
   (let* ((body (irc:message-body msg))
-         (positions (string-match-positions (regexp ",eval") body)))
+         (positions (string-search-positions (regexp ",eval") body)))
     (with-input-from-string (substring body (cadr (car positions)))
       (lambda ()
         (let ((s (read)))
@@ -211,7 +213,7 @@
                        (handle-exceptions exn "干啥呢，嘿嘿！" (eval s)))))))))))
 
 (define (icymm-time-callback msg)
-  (icymm-response msg (string-append "东京时间：" (seconds->string (current-seconds)))))
+  (icymm-response msg (string-append "北京时间：" (seconds->string (current-seconds)))))
 
 (define (icymm-uptime-callback msg)
   (icymm-response msg
@@ -223,12 +225,24 @@
                                  (remainder (remainder (remainder diff 86400) 3600) 60))))))
 
 (define (icymm-emms-callback msg)
-  (icymm-response msg "Emacs 中的超级音频、视频播放器！赶快来用吧！=> http://www.gnu.org/software/emms"))
+  (icymm-response msg "Emacs 之超级音频、视频播放器！赶快来用吧！=> http://www.gnu.org/software/emms"))
 
 (define (icymm-paste-callback msg)
   (icymm-response msg "贴贴贴！=> xwl-wgetpaste-ubuntu-cn, http://paste.ubuntu.org.cn (支持图片), wgetpaste"))
 
-
+(define (icymm-url-callback msg)
+  "Get title for url pasted in channel."
+  (let* ((body (irc:message-body msg))
+         (positions (string-search-positions (regexp "(https?://[^ ]+) ?") body)))
+    (when positions
+      (let ((url (apply substring body (cadr positions))))
+        (condition-case 
+         (icymm-response 
+          msg
+          (car ((sxpath `(head title *text*))
+                (html->sxml (with-input-from-request url #f read-string)))))
+         (err () 'ignored))))))
+
 ;;; Main
 
 (define (icymm-load-rc)
@@ -301,7 +315,9 @@
                 ("靠"        ,icymm-dirty-callback    dirty)
                 (",joke"     ,icymm-joke-callback     joke)
                 (",emms"     ,icymm-emms-callback     emms)
-                (",paste"    ,icymm-paste-callback    paste)))
+                (",paste"    ,icymm-paste-callback    paste)
+                ("https?://" ,icymm-url-callback      url)
+                ))
 
     (irc:add-message-handler! icymm-connection
                               icymm-join-callback
@@ -313,12 +329,14 @@
                                 icymm-default-callback
                                 'default)
 
-    ;; Run this program in csi, then we can debug and modify it on the fly!!
+    ;; For debug+  Run this program in csi, then we can debug and modify it on the fly!!
     (thread-start! (lambda () (irc:run-message-loop icymm-connection debug: #t)))
+    ;; (irc:run-message-loop icymm-connection debug: #t)
 
     ))
 
 ;; Let's go!
 (main)
+
 
 ;;; icymm.scm ends here
