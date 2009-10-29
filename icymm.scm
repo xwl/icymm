@@ -113,19 +113,25 @@
 ;; TODO fix ,joke 
 
 (define (icymm-default-callback msg)
-  (let* ((db '("不懂你在说什么呃… :P"
-               "确认你说的是人话？！"
-               "嗯？"
-               "哦。"
-               "嗯"
-               ":-)"
-               ":P"
-               "今天天气挺不错。"
-               "一天到晚游泳的鱼。"
-               "饭没，兄弟？"
-               ))
-         (i (random (length db))))
-    (icymm-response msg (list-ref db i))))
+  ;; (let* ((db '("何當共剪西窗燭 卻話巴山夜時雨"
+  ;;              "若見諸相非相 則見如來"
+  ;;              "本來無一物 何處惹塵埃"
+  ;;              "一日不見 如隔三秋"
+  ;;              "がんばりましょう！"
+  ;;              "朝聞道 夕死可矣"
+  ;;              "亡之，命矣夫！斯人也而有斯疾也！斯人也而有斯疾也!"
+  ;;              ))
+  ;;        (i (random (length db))))
+  ;;   (icymm-response msg (list-ref db i))))
+  (letrec ((fortune-reader
+            (lambda (s)
+              (let ((tmp (read-line)))
+                (if (eof-object? tmp)
+                    s
+                  (fortune-reader (string-append s tmp " ")))))))
+    (icymm-response 
+     msg 
+     (with-input-from-pipe "fortune" (lambda () (fortune-reader ""))))))
 
 (define (icymm-emacs-cn-callback msg)
   (icymm-response msg  (icymm-format-url "http://www.emacs.cn")))
@@ -239,9 +245,20 @@
         (condition-case 
          (icymm-response 
           msg
-          (car ((sxpath `(head title *text*))
-                (html->sxml (with-input-from-request url #f read-string)))))
+          (icymm-enca-as-utf-8
+           (car ((sxpath `(head title *text*))
+                 (html->sxml (with-input-from-request url #f read-string))))))
          (err () 'ignored))))))
+
+
+;;; Utilities
+
+;; Convert STR to utf-8 encoded.
+(define (icymm-enca-as-utf-8 str)
+  (with-input-from-pipe 
+   (string-append "echo " str " | enca -x utf-8")
+   read-string))
+
 
 ;;; Main
 
@@ -330,8 +347,8 @@
                                 'default)
 
     ;; For debug+  Run this program in csi, then we can debug and modify it on the fly!!
-    (thread-start! (lambda () (irc:run-message-loop icymm-connection debug: #t)))
-    ;; (irc:run-message-loop icymm-connection debug: #t)
+    ;; (thread-start! (lambda () (irc:run-message-loop icymm-connection debug: #t)))
+    (irc:run-message-loop icymm-connection debug: #t)
 
     ))
 
