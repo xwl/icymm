@@ -27,7 +27,7 @@
 ;;; Code:
 
 (use posix tcp irc regex srfi-1 srfi-13 args srfi-18 
-     http-client html-parser sxpath)
+     http-client html-parser sxpath format)
 
 ;;; Global Variables
 (define icymm-server "irc.debian.org")
@@ -144,7 +144,10 @@
     (when positions
       (let ((future-receiver (apply substring body (cadr positions)))
             (content (substring body (cadr (car positions)))))
-        (icymm-tell-table-add! future-receiver sender content)
+        (icymm-tell-table-add! 
+         future-receiver 
+         sender 
+         (string-append "[" (icymm-tell-timestamp) "] " content))
         (icymm-response msg
                         (format "收到，下次 ~A 上线的时候，代为转告！"
                                 future-receiver))))))
@@ -234,7 +237,7 @@
   (icymm-response msg "Emacs 之超级音频、视频播放器！赶快来用吧！=> http://www.gnu.org/software/emms"))
 
 (define (icymm-paste-callback msg)
-  (icymm-response msg "贴贴贴！=> xwl-wgetpaste-ubuntu-cn, http://paste.ubuntu.org.cn (支持图片), wgetpaste"))
+  (icymm-response msg "贴贴贴！=> M-x xwl-paste-ubuntu-cn (http://paste.ubuntu.org.cn/46163), http://paste.ubuntu.org.cn (支持图片), wgetpaste"))
 
 (define (icymm-url-callback msg)
   "Get title for url pasted in channel."
@@ -258,6 +261,14 @@
   (with-input-from-pipe 
    (string-append "echo " str " | enca -x utf-8")
    read-string))
+
+(define (icymm-tell-timestamp)
+  "11/08 11:53"
+  (let ((lst (map (lambda (i)
+                    (vector-ref (seconds->local-time (current-seconds)) i))
+                  '(4 3 2 1))))
+    (apply format #f "~2,'0D/~2,'0D ~2,'0D:~2,'0D" (cons (+ (car lst) 1) 
+                                                         (cdr lst)))))
 
 
 ;;; Main
