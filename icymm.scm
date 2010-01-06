@@ -31,6 +31,9 @@
 
 ;;; Global Variables
 (define icymm-server "irc.debian.org")
+(define icymm-port 6667)
+(define icymm-fortune-file "icymm.fortune")
+
 (define icymm-nick "icymm")
 (define icymm-channel "#emacs-cn")
 (define icymm-password #f)
@@ -38,6 +41,8 @@
 
 (define icymm-connection #f)
 (define icymm-start-time #f)
+
+(define icymm-irc-nick-regexp "[a-zA-Z][a-zA-Z0-9_]*")
 
 
 ;;; Data Table
@@ -47,10 +52,11 @@
 
 ;; '(receiver sender msg)
 (define icymm-tell-table '())
+(define icymm-aliases '())
 
 (define icymm-tell-table-cache-file "~/.icymm-cache")
 
-(define (icymm-tell-table-save)
+(define (icymm-cache-save)
   "Save `icymm-tell-table' to `icymm-tell-table-cache-file'."
   (with-output-to-file icymm-tell-table-cache-file
     (lambda ()
@@ -58,8 +64,12 @@
        (format
         ";; -*- scheme -*-
 
- (set! icymm-tell-table '~S)"
-        icymm-tell-table)))))
+ (set! icymm-tell-table '~S)
+
+ (set! icymm-aliases '~S)"
+        icymm-tell-table
+        icymm-aliases
+        )))))
 
 (define (icymm-tell-table-load)
   "Load `icymm-tell-table' from `icymm-tell-table-cache-file'."
@@ -69,13 +79,13 @@
 (define (icymm-tell-table-add! receiver sender msg)
   (set! icymm-tell-table
         (append icymm-tell-table (list (list receiver sender msg))))
-  (icymm-tell-table-save))
+  (icymm-cache-save))
 
 (define (icymm-tell-table-remove! record)
   ;; Not alist-delete here, since a user may recieve multiple messages
   ;; from different people.
   (set! icymm-tell-table (delete record icymm-tell-table))
-  (icymm-tell-table-save))
+  (icymm-cache-save))
 
 (define (icymm-response msg response)
 ;;   (display (format "(sender, receiver): (~A, ~A)\n"
@@ -109,32 +119,27 @@
  (string-append "没记错的话，它是：" url))
 
 (define (icymm-help-callback msg)
-  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,uptime ,emms ,paste ..."))
+  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,uptime ,emms ,paste ,alias ..."))3
+
 ;; TODO fix ,joke 
 
 (define (icymm-default-callback msg)
-  ;; (let* ((db '("何當共剪西窗燭 卻話巴山夜時雨"
-  ;;              "若見諸相非相 則見如來"
-  ;;              "本來無一物 何處惹塵埃"
-  ;;              "一日不見 如隔三秋"
-  ;;              "がんばりましょう！"
-  ;;              "朝聞道 夕死可矣"
-  ;;              "亡之，命矣夫！斯人也而有斯疾也！斯人也而有斯疾也!"
-  ;;              ))
-  ;;        (i (random (length db))))
-  ;;   (icymm-response msg (list-ref db i))))
   (letrec ((fortune-reader
             (lambda (s)
               (let ((tmp (read-line)))
                 (if (eof-object? tmp)
                     s
                   (fortune-reader (string-append s tmp " ")))))))
-    (icymm-response 
-     msg 
-     (with-input-from-pipe "fortune" (lambda () (fortune-reader ""))))))
+    (let* ((s (with-input-from-pipe 
+               (string-append "fortune || cat "  icymm-fortune-file)
+               (lambda () (fortune-reader ""))))
+           (s1 (string-split-fields "[^%]+" s))
+           (i (random (length s1))))
+      (icymm-response 
+       msg (string-trim-both (list-ref s1 i))))))
 
 (define (icymm-emacs-cn-callback msg)
-  (icymm-response msg  (icymm-format-url "http://www.emacs.cn")))
+  (icymm-response msg (icymm-format-url "http://www.emacs.cn")))
 
 (define (icymm-tell-callback msg)
   "发离线消息。"
@@ -142,15 +147,56 @@
          (body (irc:message-body msg))
          (positions (string-search-positions (regexp ",tell ([a-zA-Z_]+) ?") body)))
     (when positions
-      (let ((future-receiver (apply substring body (cadr positions)))
-            (content (substring body (cadr (car positions)))))
-        (icymm-tell-table-add! 
-         future-receiver 
-         sender 
-         (string-append "[" (icymm-tell-timestamp) "] " content))
-        (icymm-response msg
-                        (format "收到，下次 ~A 上线的时候，代为转告！"
-                                future-receiver))))))
+      (let* ((future-receiver (apply substring body (cadr positions)))
+             (content (substring body (cadr (car positions))))
+             (alias (icymm-alias-online? future-receiver)))
+        (print alias)
+        (newline)
+        (if alias
+            (icymm-response msg (format "笨笨，伊有别名 ~A 在线啊！" alias))
+          (begin 
+            (icymm-tell-table-add! 
+             future-receiver 
+             sender 
+             (string-append "[" (icymm-tell-timestamp) "] " content))
+            (icymm-response msg
+                            (format "收到，下次 ~A 上线的时候，代为转告！"
+                                    future-receiver))))))))
+
+(define (icymm-alias-online? nick)
+  "Check `icymm-aliases' to see whether NICK has any other aliases online."
+  (let ((aliases (icymm-alias-find nick))
+        (names (icymm-names)))
+    (let loop ((ali aliases))
+      (print ali) (newline)
+      (cond ((not (list? ali))
+             #f)
+            ((member (car ali) names)
+             (print "..") (print (car ali)) (newline)
+             (car ali))
+            (else
+             (loop (cdr ali)))))))
+
+(define (icymm-alias-find nick)
+  "Look up aliases for nick from `icymm-aliases'."
+  (let loop ((ali icymm-aliases))
+    (cond ((null? ali)
+           #f)
+          ((member nick (car ali))
+           (car ali))
+          (else
+           (loop (cdr ali))))))
+
+(define (icymm-names)
+  (irc:command icymm-connection (string-append "names " icymm-channel))
+  (let* ((body (irc:message-body (irc:wait icymm-connection)))
+         (positions (string-search-positions 
+                     (regexp (format "353.+~A = ~A :(.+)" icymm-nick icymm-channel)) body)))
+    (if positions
+      (string-split-fields
+       "[^ ]+" (apply substring body (cadr positions)))
+      ;; TODO: possible dead loop?
+      (icymm-names))))
 
 (define (icymm-join-callback msg)
   (let* ((body (irc:message-body msg))
@@ -253,6 +299,22 @@
                  (html->sxml (with-input-from-request url #f read-string))))))
          (err () 'ignored))))))
 
+(define (icymm-alias-callback msg)
+  "Notify icymm aliases of people."
+  (let* ((body (irc:message-body msg))
+         (positions (string-search-positions (regexp ",alias (.+)") body)))
+    (when positions
+      (let ((aliases (string-split-fields 
+                      "[^ ]+" (apply substring body (cadr positions)))))
+        (icymm-update-alias aliases)
+        (icymm-response msg "aliases updated")))))
+
+(define (icymm-update-alias aliases)
+  (set! icymm-aliases
+        (append (list aliases) icymm-aliases))
+  (icymm-cache-save))
+
+;; TODO, maybe provide ,unalias.
 
 ;;; Utilities
 
@@ -269,7 +331,6 @@
                   '(4 3 2 1))))
     (apply format #f "~2,'0D/~2,'0D ~2,'0D:~2,'0D" (cons (+ (car lst) 1) 
                                                          (cdr lst)))))
-
 
 ;;; Main
 
@@ -323,9 +384,12 @@
     (set! icymm-start-time (current-seconds))
 
     (set! icymm-connection (irc:connection server: icymm-server
+                                           port: icymm-port
                                            nick: icymm-nick
                                            password: icymm-password
-                                           real-name: icymm-real-name))
+                                           real-name: icymm-real-name
+                                           log-traffic: (current-output-port)
+                                           ))
     (irc:connect icymm-connection)
 
     (irc:join icymm-connection icymm-channel)
@@ -333,6 +397,7 @@
     (when icymm-password
       (irc:command icymm-connection (string-append "identify " icymm-password)))
 
+    ;; privmsg
     (for-each (lambda (i) (apply icymm-add-privmsg-handler! i))
               `((",help"     ,icymm-help-callback     help)
                 (",time"     ,icymm-time-callback     time)
@@ -345,6 +410,7 @@
                 (",emms"     ,icymm-emms-callback     emms)
                 (",paste"    ,icymm-paste-callback    paste)
                 ("https?://" ,icymm-url-callback      url)
+                (",alias"    ,icymm-alias-callback    alias)
                 ))
 
     (irc:add-message-handler! icymm-connection
