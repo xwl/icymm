@@ -1,6 +1,6 @@
 ;;; icymm.scm --- an irc bot for #emacs-cn@irc.debian.org
 
-;; Copyright (C) 2008 2009 William Xu
+;; Copyright (C) 2008, 2009, 2010 William Xu
 
 ;; Author: William Xu <william.xwl@gmail.com>
 ;; Version: 0.2a
@@ -133,7 +133,7 @@
     (let* ((s (with-input-from-pipe 
                (string-append "fortune || cat "  icymm-fortune-file)
                (lambda () (fortune-reader ""))))
-           (s1 (string-split-fields "[^%]+" s))
+           (s1 (string-split s "%"))
            (i (random (length s1))))
       (icymm-response 
        msg (string-trim-both (list-ref s1 i))))))
@@ -193,8 +193,7 @@
          (positions (string-search-positions 
                      (regexp (format "353.+~A = ~A :(.+)" icymm-nick icymm-channel)) body)))
     (if positions
-      (string-split-fields
-       "[^ ]+" (apply substring body (cadr positions)))
+        (string-split (apply substring body (cadr positions)))
       ;; TODO: possible dead loop?
       (icymm-names))))
 
@@ -304,8 +303,7 @@
   (let* ((body (irc:message-body msg))
          (positions (string-search-positions (regexp ",alias (.+)") body)))
     (when positions
-      (let ((aliases (string-split-fields 
-                      "[^ ]+" (apply substring body (cadr positions)))))
+      (let ((aliases (string-split (apply substring body (cadr positions)))))
         (icymm-update-alias aliases)
         (icymm-response msg "aliases updated")))))
 
