@@ -33,6 +33,7 @@
 (define icymm-server "irc.debian.org")
 (define icymm-port 6667)
 (define icymm-fortune-file "icymm.fortune")
+(define icymm-logging-p #t)
 
 (define icymm-nick "icymm")
 (define icymm-channel "#emacs-cn")
@@ -340,11 +341,15 @@
         (lambda ()
           (display ";; -*- scheme -*-
 
- (set! icymm-server \"irc.debian.org\")
- (set! icymm-nick \"icymm\")
- (set! icymm-channel \"#emacs-cn\")
- (set! icymm-password \"bot password\")
- (set! icymm-real-name \"湘琴\")
+(set! icymm-server \"irc.debian.org\")
+(set! icymm-port 6667)
+(set! icymm-fortune-file \"icymm.fortune\")
+(set! icymm-logging-p #t)
+
+(set! icymm-nick \"icymm\")
+(set! icymm-channel \"#emacs-cn\")
+(set! icymm-password \"\")
+(set! icymm-real-name \"湘琴\")
 "))))))
 
 (define (icymm-parse-command-line)
@@ -386,8 +391,10 @@
                                            nick: icymm-nick
                                            password: icymm-password
                                            real-name: icymm-real-name
-                                           log-traffic: (current-output-port)
+                                           log-traffic: (when icymm-logging-p
+                                                          (current-output-port))
                                            ))
+
     (irc:connect icymm-connection)
 
     (irc:join icymm-connection icymm-channel)
