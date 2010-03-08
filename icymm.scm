@@ -146,13 +146,14 @@
   "发离线消息。"
   (let* ((sender (irc:message-sender msg))
          (body (irc:message-body msg))
-         (positions (string-search-positions (regexp ",tell ([a-zA-Z_]+) ?") body)))
+         (positions (string-search-positions
+                     (regexp (format ",tell (~A) ?" icymm-irc-nick-regexp)) body)))
     (when positions
       (let* ((future-receiver (apply substring body (cadr positions)))
              (content (substring body (cadr (car positions))))
              (alias (icymm-alias-online? future-receiver)))
-        (print alias)
-        (newline)
+        ;; (print alias)
+        ;; (newline)
         (if alias
             (icymm-response msg (format "笨笨，伊有别名 ~A 在线啊！" alias))
           (begin 
@@ -168,15 +169,22 @@
   "Check `icymm-aliases' to see whether NICK has any other aliases online."
   (let ((aliases (icymm-alias-find nick))
         (names (icymm-names)))
-    (let loop ((ali aliases))
-      (print ali) (newline)
-      (cond ((not (list? ali))
-             #f)
-            ((member (car ali) names)
-             (print "..") (print (car ali)) (newline)
-             (car ali))
-            (else
-             (loop (cdr ali)))))))
+    ;; (display names) (newline)
+    ;; (display nick) (newline)
+    (cond ((member nick names)
+           nick)
+          (aliases
+           (let loop ((ali aliases))
+             ;; (print ali) (newline)
+             (cond ((not (list? ali))
+                    #f)
+                   ((member (car ali) names)
+                    ;; (print "..") (print (car ali)) (newline)
+                    (car ali))
+                   (else
+                    (loop (cdr ali))))))
+          (else
+           #f))))
 
 (define (icymm-alias-find nick)
   "Look up aliases for nick from `icymm-aliases'."
@@ -200,7 +208,8 @@
 
 (define (icymm-join-callback msg)
   (let* ((body (irc:message-body msg))
-         (positions (string-search-positions (regexp ":([a-zA-Z_]+)!") body)))
+         (positions (string-search-positions
+                     (regexp (format ":(~A)!" icymm-irc-nick-regexp)) body)))
     ;; (unless positions (icymm-response msg "not matched?"))
     (when positions
           ;; (icymm-response msg "matched?")
@@ -376,6 +385,7 @@
 
     (args:parse (command-line-arguments) opts)))
 
+
 (define (main)
   (icymm-load-rc)
 
@@ -430,7 +440,9 @@
 
     ;; For debug+  Run this program in csi, then we can debug and modify it on the fly!!
     ;; (thread-start! (lambda () (irc:run-message-loop icymm-connection debug: #t)))
+
     (irc:run-message-loop icymm-connection debug: #t)
+    (main)                              ; auto reconnnect
 
     ))
 
