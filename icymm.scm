@@ -27,7 +27,7 @@
 ;;; Code:
 
 (use posix tcp irc regex srfi-1 srfi-13 args srfi-18 
-     http-client html-parser sxpath format)
+     http-client html-parser sxpath format json)
 
 ;;; Global Variables
 (define icymm-server "irc.debian.org")
@@ -97,6 +97,11 @@
       (irc:say icymm-connection response (irc:message-sender msg))
       (irc:say icymm-connection response)))
 
+(define (icymm-notice msg notice)
+  (if (icymm-receiver-is-me? (irc:message-receiver msg))
+      (irc:notice icymm-connection notice (irc:message-sender msg))
+    (irc:notice icymm-connection notice)))
+
 (define (icymm-add-privmsg-handler! command callback tag)
   (irc:add-message-handler!
    icymm-connection
@@ -120,7 +125,7 @@
  (string-append "没记错的话，它是：" url))
 
 (define (icymm-help-callback msg)
-  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,uptime ,emms ,paste ,alias ..."))3
+  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,uptime ,emms ,paste ,alias ,weather ..."))3
 
 ;; TODO fix ,joke 
 
@@ -297,16 +302,22 @@
 (define (icymm-url-callback msg)
   "Get title for url pasted in channel."
   (let* ((body (irc:message-body msg))
-         (positions (string-search-positions (regexp "(https?://[^ ]+) ?") body)))
-    (when positions
-      (let ((url (apply substring body (cadr positions))))
-        (condition-case 
-         (icymm-response 
-          msg
-          (icymm-enca-as-utf-8
-           (car ((sxpath `(head title *text*))
-                 (html->sxml (with-input-from-request url #f read-string))))))
-         (err () 'ignored))))))
+         (match (string-search "(https?://[^ ]+)" body)))
+    (condition-case 
+     (let* ((url (cadr match))
+            (text (html->sxml (icymm-curl url)))
+            (raw 
+             (car 
+              (append ((sxpath `(html head meta title *text*)) text)
+                      ((sxpath `(html head title *text*)) text))))
+            (encoded (icymm-iconv raw 'gb18030 'utf-8)))
+       ;; FIXME: how to determine charset?
+       (icymm-notice
+        msg (apply format
+                   "~A / ~A" 
+                   (map car (map (lambda (s) (string-split s "\n"))
+                                 (list encoded raw))))))
+     (err () 'ignored))))
 
 (define (icymm-alias-callback msg)
   "Notify icymm aliases of people."
@@ -322,14 +333,52 @@
         (append (list aliases) icymm-aliases))
   (icymm-cache-save))
 
+(define (icymm-weather-callback msg)
+  (let* ((body (irc:message-body msg))
+         (match (string-search ",weather +([^ ]+)" body)))
+    (condition-case 
+     (let* ((city (icymm-enca-as-gb18030 (cadr match)))
+            (city-url (string-append
+                       "http://search.weather.com.cn/static/url_gb.php?CityInfo=" 
+                       city))
+            (code (cadr (string-search "([0-9]{9})\\." (icymm-curl city-url))))
+            (json-url (format "http://m.weather.com.cn/data/~A.html" code))
+            (json (with-input-from-string (icymm-curl json-url) json-read)))
+       (icymm-notice msg (icymm-weather-generate-result json)))
+     (err () (begin (icymm-notice msg "city unknown or incorrect format")
+                    'ignored)))))
+
+(define (icymm-weather-generate-result json)
+  (let ((lst (vector->list (cdr (vector-ref json 0))))
+        (matcher (lambda (match) (lambda (el) (string= (car el) match)))))
+    (format "~A: ~A ~A / 明天 ~A ~A, weather.com.cn" 
+            (cdr (find (matcher "city") lst))
+            (cdr (find (matcher "weather1") lst))
+            (cdr (find (matcher "temp1") lst))
+
+            (cdr (find (matcher "weather2") lst))
+            (cdr (find (matcher "temp2") lst)))))
+
 ;; TODO, maybe provide ,unalias.
 
 ;;; Utilities
+
+;; TODO, sum up enca, iconv
 
 ;; Convert STR to utf-8 encoded.
 (define (icymm-enca-as-utf-8 str)
   (with-input-from-pipe 
    (string-append "echo " str " | enca -x utf-8")
+   read-string))
+
+(define (icymm-enca-as-gb18030 str)
+  (with-input-from-pipe 
+   (string-append "echo " str " | iconv -f utf-8 -t gb18030")
+   read-string))
+
+(define (icymm-iconv str from to)
+  (with-input-from-pipe 
+   (format "echo ~A | iconv -f ~A -t ~A" str from to)
    read-string))
 
 (define (icymm-tell-timestamp)
@@ -339,6 +388,15 @@
                   '(4 3 2 1))))
     (apply format #f "~2,'0D/~2,'0D ~2,'0D:~2,'0D" (cons (+ (car lst) 1) 
                                                          (cdr lst)))))
+(define (icymm-curl url)
+  ;; (with-input-from-request url #f read-string)
+  (with-input-from-pipe
+   (let ((proxy-server (getenv "http_proxy"))
+         (proxy-port (getenv "http_port")))
+     (if (and proxy-server proxy-port)
+         (format "curl -x ~A:~A ~A" proxy-server proxy-port url)
+       (string-append "curl ~A" url)))
+   read-string))
 
 ;;; Main
 
@@ -426,6 +484,7 @@
                 (",paste"    ,icymm-paste-callback    paste)
                 ("https?://" ,icymm-url-callback      url)
                 (",alias"    ,icymm-alias-callback    alias)
+                (",weather"  ,icymm-weather-callback  weather)
                 ))
 
     (irc:add-message-handler! icymm-connection
@@ -440,10 +499,9 @@
 
     ;; For debug+  Run this program in csi, then we can debug and modify it on the fly!!
     ;; (thread-start! (lambda () (irc:run-message-loop icymm-connection debug: #t)))
+    ;; (irc:run-message-loop icymm-connection debug: #t)
 
-    (irc:run-message-loop icymm-connection debug: #t)
-    (main)                              ; auto reconnnect
-
+    (irc:run-message-loop icymm-connection)
     ))
 
 ;; Let's go!
