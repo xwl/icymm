@@ -482,7 +482,7 @@
                 (",joke"     ,icymm-joke-callback     joke)
                 (",emms"     ,icymm-emms-callback     emms)
                 (",paste"    ,icymm-paste-callback    paste)
-                ("https?://" ,icymm-url-callback      url)
+                (".*https?://" ,icymm-url-callback      url)
                 (",alias"    ,icymm-alias-callback    alias)
                 (",weather"  ,icymm-weather-callback  weather)
                 ))
