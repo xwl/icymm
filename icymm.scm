@@ -306,17 +306,25 @@
     (condition-case 
      (let* ((url (cadr match))
             (text (html->sxml (icymm-curl url)))
-            (raw 
-             (car 
-              (append ((sxpath `(html head meta title *text*)) text)
-                      ((sxpath `(html head title *text*)) text))))
-            (encoded (icymm-iconv raw 'gb18030 'utf-8)))
-       ;; FIXME: how to determine charset?
-       (icymm-notice
-        msg (apply format
-                   "~A / ~A" 
-                   (map car (map (lambda (s) (string-split s "\n"))
-                                 (list encoded raw))))))
+            (charset #f)
+            (title
+             (cadr 
+              (string-search
+               "([^\n ].*[^\n ])" 
+               (car ((sxpath '(// title *text*)) text))))))
+
+       (find (lambda (el) 
+               (let ((m (string-search "charset *= *([^ ].+[^ ])" el)))
+                 (if m (begin (set! charset (cadr m))
+                              #t)
+                   #f)))
+             ((sxpath '(// meta @ content *text*))text))
+
+       (when charset
+         (set! title (icymm-iconv title charset 'utf-8)))
+
+       (icymm-notice msg title))
+
      (err () 'ignored))))
 
 (define (icymm-alias-callback msg)
