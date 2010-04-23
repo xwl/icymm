@@ -349,23 +349,87 @@
             (city-url (string-append
                        "http://search.weather.com.cn/static/url_gb.php?CityInfo=" 
                        city))
-            (code (cadr (string-search "([0-9]{9})\\." (icymm-curl city-url))))
-            (json-url (format "http://m.weather.com.cn/data/~A.html" code))
-            (json (with-input-from-string (icymm-curl json-url) json-read)))
-       (icymm-notice msg (icymm-weather-generate-result json)))
+            (code (cadr (string-search "([0-9]{9})\\." (icymm-curl city-url)))))
+       (icymm-notice msg (icymm-weather-generate-result  
+                          (icymm-weather-prepare-data-from-sxml code)
+                          ;; (icymm-weather-prepare-data-from-json city code)
+                          )))
      (err () (begin (icymm-notice msg "city unknown or incorrect format")
                     'ignored)))))
 
-(define (icymm-weather-generate-result json)
-  (let ((lst (vector->list (cdr (vector-ref json 0))))
-        (matcher (lambda (match) (lambda (el) (string= (car el) match)))))
-    (format "~A: ~A ~A / 明天 ~A ~A, weather.com.cn" 
-            (cdr (find (matcher "city") lst))
-            (cdr (find (matcher "weather1") lst))
-            (cdr (find (matcher "temp1") lst))
+(define (icymm-weather-generate-result data)
+  "(city weather1 temp1 weather2 temp2)."
+  (apply format "~A: ~A ~A / 明天 ~A ~A, weather.com.cn" data))
 
-            (cdr (find (matcher "weather2") lst))
-            (cdr (find (matcher "temp2") lst)))))
+(define (icymm-weather-prepare-data-from-sxml code)
+  (let* ((url (format "http://www.weather.com.cn/html/weather/~A.shtml" code))
+         (sxml (html->sxml (icymm-curl url)))
+         (city (icymm-weather-extract-city sxml))
+         (temps (icymm-weather-extract-temperatures sxml))
+         (phens (icymm-weather-extract-phenomenons sxml)))
+    (let loop ((t temps)
+               (p phens)
+               (ret '()))
+      (cond 
+       ((null? t)
+        (cons city (apply append (reverse ret))))
+       ((= (length (car t)) 1)
+        (loop (cdr t) (cdr p) (cons (list (car p) (string-append (caar t) "℃")) ret)))
+       ((= (length (car t)) 2)
+        (loop (cdr t) 
+              (drop p 2)
+              (cons (list (apply format "~A~~~A" (take p 2))
+                          (apply format "~A℃~~~A℃" (car t)))
+                    ret)))))))
+
+(define (icymm-weather-extract-city sxml)
+  (let ((city (find (lambda (el)
+                      (let ((l (last el)))
+                        (and (list? l) (eq? (car l) 'span))))
+                    ((sxpath '(// div h1)) sxml))))
+    (cadr city)))
+            
+(define (icymm-weather-extract-temperatures sxml)
+  "Return a list of temperatures of following three days.
+e.g.,  
+  daytime: ((5 15) (20 7) (21 10))
+  nighttime:  ((5) (20 7) (21 10))"
+  (let* ((temps ((sxpath '(// strong *text*)) sxml))
+         (first-temp-pos
+          (let loop ((n 0)
+                     (lst (cdr temps))
+                     (el (car temps)))
+            (if (string=? "℃" el)
+                (- n 1)
+              (loop (+ n 1) (cdr lst) (car lst))))))
+    (map (lambda (el) (string-split el "℃"))
+         (take (string-split 
+                (apply string-append (drop temps first-temp-pos))
+                "\r\n *") 3) )))
+
+(define (icymm-weather-extract-phenomenons sxml)
+  "Return of list of weather phenomenons for couples of days.
+
+We have to look at `icymm-weather-extract-temperatures' to find the
+corresponding phenomenon for each day."
+  (let ((phenomenons ((sxpath '(// table tr td a *text*)) sxml)))
+    (remove (lambda (el) (not el))
+            (map (lambda (el)
+                   (let ((m (string-search ".*target=\"_blank\">(.+)" el)))
+                     (if m (cadr m) #f)))
+                 phenomenons))))
+
+(define (icymm-weather-prepare-data-from-json code)
+  (let* ((json-url (format "http://m.weather.com.cn/data/~A.html" code))
+         (json (with-input-from-string (icymm-curl json-url) json-read))
+         (lst (vector->list (cdr (vector-ref json 0))))
+         (matcher (lambda (match) (lambda (el) (string= (car el) match)))))
+    (list (cdr (find (matcher "city") lst))
+          (cdr (find (matcher "weather1") lst))
+          (cdr (find (matcher "temp1") lst))
+
+          (cdr (find (matcher "weather2") lst))
+          (cdr (find (matcher "temp2") lst)))))
 
 ;; TODO, maybe provide ,unalias.
 
