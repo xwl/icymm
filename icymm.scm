@@ -358,8 +358,8 @@
                     'ignored)))))
 
 (define (icymm-weather-generate-result data)
-  "(city weather1 temp1 weather2 temp2)."
-  (apply format "~A: ~A ~A / 明天 ~A ~A, weather.com.cn" data))
+  "(city weather1 temp1 weather2 temp2 weather3 temp3)."
+  (apply format "~A: ~A ~A / 明天 ~A ~A / 后天 ~A ~A, weather.com.cn" data))
 
 (define (icymm-weather-prepare-data-from-sxml code)
   (let* ((url (format "http://www.weather.com.cn/html/weather/~A.shtml" code))
@@ -424,12 +424,8 @@ corresponding phenomenon for each day."
          (json (with-input-from-string (icymm-curl json-url) json-read))
          (lst (vector->list (cdr (vector-ref json 0))))
          (matcher (lambda (match) (lambda (el) (string= (car el) match)))))
-    (list (cdr (find (matcher "city") lst))
-          (cdr (find (matcher "weather1") lst))
-          (cdr (find (matcher "temp1") lst))
-
-          (cdr (find (matcher "weather2") lst))
-          (cdr (find (matcher "temp2") lst)))))
+    (map (lambda (str) (cdr (find (matcher str) lst)))
+         '("city" "weather1" "temp1" "weather2" "temp2" "weather3" "temp3"))))
 
 ;; TODO, maybe provide ,unalias.
 
