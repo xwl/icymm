@@ -343,9 +343,9 @@
 
 (define (icymm-weather-callback msg)
   (let* ((body (irc:message-body msg))
-         (match (string-search ",weather +([^ ]+)" body)))
+         (match (string-search ",w(eather)? +([^ ]+)" body)))
     (condition-case 
-     (let* ((city (icymm-enca-as-gb18030 (cadr match)))
+     (let* ((city (icymm-enca-as-gb18030 (last match)))
             (city-url (string-append
                        "http://search.weather.com.cn/static/url_gb.php?CityInfo=" 
                        city))
@@ -413,7 +413,7 @@ e.g.,
 We have to look at `icymm-weather-extract-temperatures' to find the
 corresponding phenomenon for each day."
   (let ((phenomenons ((sxpath '(// table tr td a *text*)) sxml)))
-    (remove (lambda (el) (not el))
+    (remove not
             (map (lambda (el)
                    (let ((m (string-search ".*target=\"_blank\">(.+)" el)))
                      (if m (cadr m) #f)))
@@ -552,7 +552,7 @@ corresponding phenomenon for each day."
                 (",paste"    ,icymm-paste-callback    paste)
                 (".*https?://" ,icymm-url-callback      url)
                 (",alias"    ,icymm-alias-callback    alias)
-                (",weather"  ,icymm-weather-callback  weather)
+                (",w(eather)?"  ,icymm-weather-callback  weather)
                 ))
 
     (irc:add-message-handler! icymm-connection
