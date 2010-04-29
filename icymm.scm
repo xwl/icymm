@@ -343,7 +343,9 @@
 
 (define (icymm-weather-callback msg)
   (let* ((body (irc:message-body msg))
-         (match (string-search ",w(eather)? +([^ ]+)" body)))
+         (match (if (string-search ",w(eather)? *$" body)
+                    '("北京")
+                  (string-search ",w(eather)? +([^ ]+)" body))))
     (condition-case 
      (let* ((city (icymm-enca-as-gb18030 (last match)))
             (city-url (string-append
@@ -353,13 +355,14 @@
        (icymm-notice msg (icymm-weather-generate-result  
                           (icymm-weather-prepare-data-from-sxml code)
                           ;; (icymm-weather-prepare-data-from-json city code)
+                          (format "http://www.weather.com.cn/html/weather/~A.shtml" code)
                           )))
      (err () (begin (icymm-notice msg "city unknown or incorrect format")
                     'ignored)))))
 
-(define (icymm-weather-generate-result data)
+(define (icymm-weather-generate-result data url)
   "(city weather1 temp1 weather2 temp2 weather3 temp3)."
-  (apply format "~A: ~A ~A / 明天 ~A ~A / 后天 ~A ~A, weather.com.cn" data))
+  (apply format "~A: ~A ~A / 明天 ~A ~A / 后天 ~A ~A, ~A" (append data (list url))))
 
 (define (icymm-weather-prepare-data-from-sxml code)
   (let* ((url (format "http://www.weather.com.cn/html/weather/~A.shtml" code))
@@ -378,8 +381,12 @@
        ((= (length (car t)) 2)
         (loop (cdr t) 
               (drop p 2)
-              (cons (list (apply format "~A~~~A" (take p 2))
-                          (apply format "~A℃~~~A℃" (car t)))
+              (cons (list 
+                     (let ((w (take p 2)))
+                       (if (string=? (car w) (cadr w))
+                           (format "~A" (car w))
+                         (apply format "~A~~~A" w)))
+                     (apply format "~A℃~~~A℃" (car t)))
                     ret)))))))
 
 (define (icymm-weather-extract-city sxml)
