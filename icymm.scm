@@ -43,7 +43,7 @@
 (define icymm-connection #f)
 (define icymm-start-time #f)
 
-(define icymm-irc-nick-regexp "[a-zA-Z][a-zA-Z0-9_]*")
+(define icymm-irc-nick-regexp "[][^_{|}a-zA-Z0-9-][][^_{|}a-zA-Z0-9-]*")
 
 
 ;;; Data Table
@@ -125,9 +125,7 @@
  (string-append "没记错的话，它是：" url))
 
 (define (icymm-help-callback msg)
-  (icymm-response msg "支持的命令：,help ,time ,emacs-cn ,tell ,uptime ,emms ,paste ,alias ,weather ..."))3
-
-;; TODO fix ,joke 
+  (icymm-response msg "支持的命令：,help ,time ,tell ,uptime ,emms ,paste ,alias ,weather ,joke ..."))
 
 (define (icymm-default-callback msg)
   (letrec ((fortune-reader
@@ -143,9 +141,6 @@
            (i (random (length s1))))
       (icymm-response 
        msg (string-trim-both (list-ref s1 i))))))
-
-(define (icymm-emacs-cn-callback msg)
-  (icymm-response msg (icymm-format-url "http://www.emacs.cn")))
 
 (define (icymm-tell-callback msg)
   "发离线消息。"
@@ -236,35 +231,34 @@
 (define (icymm-dirty-callback msg)
   (icymm-response msg "你骂人？！"))
 
+;; qiushibaidu 的 html 太不标准了 :(
 (define (icymm-joke-callback msg)
-  ;; (icymm-response msg "帮你找笑话-ing，耐心等会哦…")
-  (let ((max-tries 3))
-    (define (iter try)
-      (if (> try max-tries)
-          "你 rp 不行啊，这回竟然没找到笑话…"
-          (with-input-from-pipe
-           (format "w3m -dump http://www.qiushibaike.com/qiushi/number/~A.html" (random 30000))
-           (lambda ()
-             (let loop ((beg #f)
-                        (end #f)
-                        (line "")
-                        (ret ""))
-               (set! line (read-line))
-               (cond
-                ((or end (string-search (regexp "很抱歉，糗事#[0-9]+不存在") line))
-                 (if (string-null? ret)
-                     (iter (+ 1 try))
-                     ret))
-                ((string-search (regexp "< 上一糗事") line)
-                 (loop beg #t line ret))
-                (beg
-                 (loop beg end line (string-append ret line)))
-                ((string-search (regexp "糗事#[0-9]+") line)
-                 (read-line)            ; skip date
-                 (loop #t end line (string-append ret "(" line ") ")))
-                (else
-                 (loop beg end line ret))))))))
-    (icymm-response msg (iter 0))))
+  (let ((seed (random 29))
+        (found #f)
+        (url ""))
+    (with-input-from-pipe
+     (format "w3m -dump http://www.qiushibaike.com")
+     (lambda ()
+       (let loop ((line (read-line))
+                  (count 0)
+                  (ret ""))
+         (cond 
+          ((string-search "^\\|" line)
+           (if (= count seed)
+               (if found
+                   (icymm-notice msg (string-append ret ", " url))
+                 (begin 
+                   (set! found #t)
+                   (loop (read-line) count "")))
+             (loop (read-line) (+ count 1) "")))
+          ((string-search "#([0-9]+) \\(!\\)" line)
+           (set! url (format "http://www.qiushibaike.com/articles/~A.htm"
+                             (last (string-search "#([0-9]+) \\(!\\)" line))))
+           (loop (read-line) count ret))
+          ((string-search "^[0-9]+ \\|" line)
+           (loop (read-line) count ret))
+          (else 
+           (loop (read-line) count (string-append ret line)))))))))
 
 ;; TODO: 如何检测无限循环等问题？
 (define (icymm-eval-callback msg)
@@ -470,7 +464,7 @@ corresponding phenomenon for each day."
          (proxy-port (getenv "http_port")))
      (if (and proxy-server proxy-port)
          (format "curl -x ~A:~A ~A" proxy-server proxy-port url)
-       (string-append "curl ~A" url)))
+       (format "curl ~A" url)))
    read-string))
 
 ;;; Main
@@ -547,19 +541,20 @@ corresponding phenomenon for each day."
 
     ;; privmsg
     (for-each (lambda (i) (apply icymm-add-privmsg-handler! i))
-              `((",help"     ,icymm-help-callback     help)
-                (",time"     ,icymm-time-callback     time)
-                (",emacs-cn" ,icymm-emacs-cn-callback emacs-cn)
-                (",tell"     ,icymm-tell-callback     tell)
-                (",uptime"   ,icymm-uptime-callback   uptime)
-                (",你好"     ,icymm-你好-callback     nihao)
-                ("靠"        ,icymm-dirty-callback    dirty)
-                (",joke"     ,icymm-joke-callback     joke)
-                (",emms"     ,icymm-emms-callback     emms)
-                (",paste"    ,icymm-paste-callback    paste)
-                (".*https?://" ,icymm-url-callback      url)
-                (",alias"    ,icymm-alias-callback    alias)
+               `((",help"       ,icymm-help-callback     help)
+                (",time"        ,icymm-time-callback     time)
+                (",tell"        ,icymm-tell-callback     tell)
+                (",uptime"      ,icymm-uptime-callback   uptime)
+                (",你好"        ,icymm-你好-callback     nihao)
+                (",joke"        ,icymm-joke-callback     joke)
+                (",emms"        ,icymm-emms-callback     emms)
+                (",paste"       ,icymm-paste-callback    paste)
+                (".*https?://"  ,icymm-url-callback      url)
+                (",alias"       ,icymm-alias-callback    alias)
                 (",w(eather)?"  ,icymm-weather-callback  weather)
+
+                ("(靠|kao)[ \t!.。?]*$" ,icymm-dirty-callback dirty)
+
                 ))
 
     (irc:add-message-handler! icymm-connection
@@ -574,8 +569,8 @@ corresponding phenomenon for each day."
 
     ;; For debug+  Run this program in csi, then we can debug and modify it on the fly!!
     ;; (thread-start! (lambda () (irc:run-message-loop icymm-connection debug: #t)))
-    ;; (irc:run-message-loop icymm-connection debug: #t)
 
+    ;; (irc:run-message-loop icymm-connection debug: #t)
     (irc:run-message-loop icymm-connection)
     ))
 
