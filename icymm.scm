@@ -125,7 +125,7 @@
  (string-append "没记错的话，它是：" url))
 
 (define (icymm-help-callback msg)
-  (icymm-response msg "支持的命令：,help ,time ,tell ,uptime ,emms ,paste ,alias ,weather ,joke ..."))
+  (icymm-response msg "支持的命令：,help ,time ,tell ,uptime ,emms ,paste ,alias ,weather ,joke ,ip..."))
 
 (define (icymm-default-callback msg)
   (letrec ((fortune-reader
@@ -351,7 +351,7 @@
                           ;; (icymm-weather-prepare-data-from-json city code)
                           (format "http://www.weather.com.cn/html/weather/~A.shtml" code)
                           )))
-     (err () (begin (icymm-notice msg "city unknown or incorrect format")
+     (err () (begin (icymm-notice msg "City unknown or bad format")
                     'ignored)))))
 
 (define (icymm-weather-generate-result data url)
@@ -427,6 +427,19 @@ corresponding phenomenon for each day."
          (matcher (lambda (match) (lambda (el) (string= (car el) match)))))
     (map (lambda (str) (cdr (find (matcher str) lst)))
          '("city" "weather1" "temp1" "weather2" "temp2" "weather3" "temp3"))))
+
+(define (icymm-ip-callback msg)
+  (let* ((body (irc:message-body msg))
+         (match (string-search ",ip ([0-9.]{7,15})" body)))
+    (condition-case
+     (let ((ip (last match)))
+       (icymm-iconv
+        (with-input-from-pipe 
+         (string-append "ip_seek ~/etc/QQWry.Dat " ip)
+         read-string)
+        'gbk 'utf-8))
+     (err () (begin (icymm-notice msg "Bad format")
+                    'ignored)))))
 
 ;; TODO, maybe provide ,unalias.
 
@@ -541,17 +554,18 @@ corresponding phenomenon for each day."
 
     ;; privmsg
     (for-each (lambda (i) (apply icymm-add-privmsg-handler! i))
-               `((",help"       ,icymm-help-callback     help)
-                (",time"        ,icymm-time-callback     time)
-                (",tell"        ,icymm-tell-callback     tell)
-                (",uptime"      ,icymm-uptime-callback   uptime)
+               `((",help"       ,icymm-help-callback    help)
+                (",time"        ,icymm-time-callback    time)
+                (",tell"        ,icymm-tell-callback    tell)
+                (",uptime"      ,icymm-uptime-callback  uptime)
                 (",你好"        ,icymm-你好-callback     nihao)
-                (",joke"        ,icymm-joke-callback     joke)
-                (",emms"        ,icymm-emms-callback     emms)
-                (",paste"       ,icymm-paste-callback    paste)
-                (".*https?://"  ,icymm-url-callback      url)
-                (",alias"       ,icymm-alias-callback    alias)
-                (",w(eather)?"  ,icymm-weather-callback  weather)
+                (",joke"        ,icymm-joke-callback    joke)
+                (",emms"        ,icymm-emms-callback    emms)
+                (",paste"       ,icymm-paste-callback   paste)
+                (".*https?://"  ,icymm-url-callback     url)
+                (",alias"       ,icymm-alias-callback   alias)
+                (",w(eather)?"  ,icymm-weather-callback weather)
+                (",ip"          ,icymm-ip-callback      ip)
 
                 ("(靠|kao)[ \t!.。?]*$" ,icymm-dirty-callback dirty)
 
