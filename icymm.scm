@@ -248,7 +248,8 @@
           ((string-search "^\\|" line)
            (if (= count seed)
                (if found
-                   (icymm-notice msg (string-append ret ", " url))
+                   ;; (string-append ret ", " url)
+                   (icymm-notice msg ret)
                  (begin 
                    (set! found #t)
                    (loop (read-line) count "")))
