@@ -40,6 +40,8 @@
 (define icymm-password #f)
 (define icymm-real-name "湘琴")
 
+(define icymm-ip-data "~/etc/QQWry.dat")
+
 (define icymm-connection #f)
 (define icymm-start-time #f)
 
@@ -430,14 +432,14 @@ corresponding phenomenon for each day."
 
 (define (icymm-ip-callback msg)
   (let* ((body (irc:message-body msg))
-         (match (string-search ",ip ([0-9.]{7,15})" body)))
+         (match (string-search ",ip +([0-9.]{7,15})" body)))
     (condition-case
-     (let ((ip (last match)))
-       (icymm-iconv
-        (with-input-from-pipe 
-         (string-append "ip_seek ~/etc/QQWry.Dat " ip)
-         read-string)
-        'gbk 'utf-8))
+     (let* ((ip (last match))
+            (loc (with-input-from-pipe 
+                  (format "ip_seek ~A ~A" icymm-ip-data ip)
+                  read-string)))
+       (icymm-notice msg (icymm-iconv (car (string-split loc "\n"))
+                                      'gbk 'utf-8)))
      (err () (begin (icymm-notice msg "Bad format")
                     'ignored)))))
 
