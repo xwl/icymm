@@ -235,33 +235,60 @@
 
 ;; qiushibaidu 的 html 太不标准了 :(
 (define (icymm-joke-callback msg)
-  (let ((seed (random 29))
+  (let ((seed (random 20))
         (found #f)
         (url ""))
-    (with-input-from-pipe
-     (format "w3m -dump http://www.qiushibaike.com")
-     (lambda ()
-       (let loop ((line (read-line))
-                  (count 0)
-                  (ret ""))
-         (cond 
-          ((string-search "^\\|" line)
-           (if (= count seed)
-               (if found
-                   ;; (string-append ret ", " url)
-                   (icymm-notice msg ret)
-                 (begin 
-                   (set! found #t)
-                   (loop (read-line) count "")))
-             (loop (read-line) (+ count 1) "")))
-          ((string-search "#([0-9]+) \\(!\\)" line)
-           (set! url (format "http://www.qiushibaike.com/articles/~A.htm"
-                             (last (string-search "#([0-9]+) \\(!\\)" line))))
-           (loop (read-line) count ret))
-          ((string-search "^[0-9]+ \\|" line)
-           (loop (read-line) count ret))
-          (else 
-           (loop (read-line) count (string-append ret line)))))))))
+
+    (condition-case 
+    ;; 1. w3m online version
+    ;; (with-input-from-pipe
+    ;;  (format "w3m -dump http://www.qiushibaike.com")
+    ;;  (lambda ()
+    ;;    (let loop ((line (read-line))
+    ;;               (count 0)
+    ;;               (ret ""))
+    ;;      (cond 
+    ;;       ((string-search "^\\|" line)
+    ;;        (if (= count seed)
+    ;;            (if found
+    ;;                ;; (string-append ret ", " url)
+    ;;                (icymm-notice msg ret)
+    ;;              (begin 
+    ;;                (set! found #t)
+    ;;                (loop (read-line) count "")))
+    ;;          (loop (read-line) (+ count 1) "")))
+    ;;       ((string-search "#([0-9]+) \\(!\\)" line)
+    ;;        (set! url (format "http://www.qiushibaike.com/articles/~A.htm"
+    ;;                          (last (string-search "#([0-9]+) \\(!\\)" line))))
+    ;;        (loop (read-line) count ret))
+    ;;       ((string-search "^[0-9]+ \\|" line)
+    ;;        (loop (read-line) count ret))
+    ;;       (else 
+    ;;        (loop (read-line) count (string-append ret line)))))))
+
+    ;; 2. w3m offline version
+    (let ((s (with-input-from-pipe 
+              (let* ((proxy-server (getenv "http_proxy"))
+                     (proxy-port (getenv "http_port"))
+                     (x (if (and proxy-server proxy-port)
+                            (format "-x ~A:~A" proxy-server proxy-port)
+                          "")))
+                (format "curl ~A http://www.qiushibaike.com | w3m -dump -T text/html |  sed -e 's/支持.*\\|.*spacer.*\\|.*下一页.*\\|今日最糗.*\\|.*uc-logo.*//'"
+                        x))
+              read-string)))
+      (icymm-notice
+       msg 
+       ;; (apply string-append 
+       ;;        (string-split
+       (string-trim-both
+        (list-ref 
+         (cdr 
+          (reverse 
+           (string-split-fields "\n.*\n\n\n\n\n" s #:infix)))
+         seed))))
+    ;; ))
+
+    (err () 'ignored))))
 
 ;; TODO: 如何检测无限循环等问题？
 (define (icymm-eval-callback msg)
@@ -308,7 +335,15 @@
              (cadr 
               (string-search
                "([^\n ].*[^\n ])" 
-               (car ((sxpath '(// title *text*)) text))))))
+               (car ((sxpath '(// title *text*)) text)))))
+            (tiny-url 
+             (if (> (string-length url) 50) ; magic..
+                 (string-append 
+                  (icymm-curl
+                   (string-append 
+                    "http://tinyurl.com/api-create.php?url=" url))
+                  ", ")
+                  "")))
 
        (find (lambda (el) 
                (let ((m (string-search "charset *= *([^ ].+[^ ])" el)))
@@ -320,7 +355,7 @@
        (when charset
          (set! title (icymm-iconv title charset 'utf-8)))
 
-       (icymm-notice msg title))
+       (icymm-notice msg (string-append tiny-url title)))
 
      (err () 'ignored))))
 
