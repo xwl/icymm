@@ -504,7 +504,7 @@ corresponding phenomenon for each day."
     (condition-case
      (let ((who (last match)))
        (if (icymm-user-online? who)
-           (icymm-notice msg "Dude, ~A is currently online!" who)
+           (icymm-notice msg (format "Dude, ~A is currently online!" who))
          (icymm-notice msg (format "~A was last seen on: ~A."
                                    who (or (icymm-seen who) "No record")))))
      (err () (begin (icymm-notice msg "Bad format")
