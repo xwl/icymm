@@ -27,7 +27,7 @@
 ;;; Code:
 
 (use posix tcp irc regex srfi-1 srfi-13 args srfi-18 
-     http-client html-parser sxpath format json)
+     http-client html-parser sxpath format json srfi-19)
 
 ;;; Global Variables
 (define icymm-server "irc.debian.org")
@@ -69,9 +69,12 @@
 
  (set! icymm-tell-table '~S)
 
- (set! icymm-aliases '~S)"
+ (set! icymm-aliases '~S)
+
+ (set! icymm-seen-table '~S)"
         icymm-tell-table
         icymm-aliases
+        icymm-seen-table
         )))))
 
 (define (icymm-tell-table-load)
@@ -89,6 +92,8 @@
   ;; from different people.
   (set! icymm-tell-table (delete record icymm-tell-table))
   (icymm-cache-save))
+
+;;; IRC commands and functions
 
 (define (icymm-response msg response)
 ;;   (display (format "(sender, receiver): (~A, ~A)\n"
@@ -119,7 +124,29 @@
             (irc:message-body msg)))
    tag: tag))
 
-
+(define (icymm-wait regexp)
+  "Wait until we received texts matching REGEXP."
+  (or (string-search regexp (irc:message-body (irc:wait icymm-connection)))
+      (icymm-wait regexp)))
+
+(define (icymm-get-ip nick)
+  (irc:command icymm-connection (string-append "whois " nick))
+  (cadr (icymm-wait
+         (string-append 
+          nick
+          " ([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}) :actually using host"
+          ))))
+
+(define (icymm-names)
+  (irc:command icymm-connection (string-append "names " icymm-channel))
+  (string-split
+   (cadr 
+    (icymm-wait
+     (format "353.+~A = ~A :(.+)" icymm-nick icymm-channel)))))
+
+(define (icymm-user-online? user)
+  (member user (icymm-names)))
+
 ;;; Callbacks
 
 (define (icymm-format-url url)
@@ -127,7 +154,9 @@
  (string-append "没记错的话，它是：" url))
 
 (define (icymm-help-callback msg)
-  (icymm-response msg "支持的命令：,help ,time ,tell ,uptime ,emms ,paste ,alias ,weather ,joke ,ip..."))
+  (icymm-response 
+   msg
+   "支持的命令：,help ,time ,tell ,uptime ,emms ,paste ,alias ,weather ,joke ,ip ,seen..."))
 
 (define (icymm-default-callback msg)
   (letrec ((fortune-reader
@@ -197,16 +226,6 @@
            (car ali))
           (else
            (loop (cdr ali))))))
-
-(define (icymm-names)
-  (irc:command icymm-connection (string-append "names " icymm-channel))
-  (let* ((body (irc:message-body (irc:wait icymm-connection)))
-         (positions (string-search-positions 
-                     (regexp (format "353.+~A = ~A :(.+)" icymm-nick icymm-channel)) body)))
-    (if positions
-        (string-split (apply substring body (cadr positions)))
-      ;; TODO: possible dead loop?
-      (icymm-names))))
 
 (define (icymm-join-callback msg)
   (let* ((body (irc:message-body msg))
@@ -376,7 +395,11 @@
 (define (icymm-weather-callback msg)
   (let* ((body (irc:message-body msg))
          (match (if (string-search ",w(eather)? *$" body)
-                    '("北京")
+                    (let ((sender (irc:message-sender msg)))
+                      (list 
+                       (or (icymm-guess-city
+                            (icymm-get-ip-location (icymm-get-ip sender)))
+                           "北京")))
                   (string-search ",w(eather)? +([^ ]+)" body))))
     (condition-case 
      (let* ((city (icymm-enca-as-gb18030 (last match)))
@@ -470,14 +493,44 @@ corresponding phenomenon for each day."
   (let* ((body (irc:message-body msg))
          (match (string-search ",ip +([0-9.]{7,15})" body)))
     (condition-case
-     (let* ((ip (last match))
-            (loc (with-input-from-pipe 
-                  (format "ip_seek ~A ~A" icymm-ip-data ip)
-                  read-string)))
-       (icymm-notice msg (icymm-iconv (car (string-split loc "\n"))
-                                      'gbk 'utf-8)))
+     (icymm-notice msg (icymm-get-ip-location (last match)))
      (err () (begin (icymm-notice msg "Bad format")
                     'ignored)))))
+
+(define (icymm-seen-callback msg)
+  (let* ((body (irc:message-body msg))
+         (match (string-search 
+                 (format ",seen (~A) ?" icymm-irc-nick-regexp) body)))
+    (condition-case
+     (let ((who (last match)))
+       (if (icymm-user-online? who)
+           (icymm-notice msg "Dude, ~A is currently online!" who)
+         (icymm-notice msg (format "~A was last seen on: ~A."
+                                   who (or (icymm-seen who) "No record")))))
+     (err () (begin (icymm-notice msg "Bad format")
+                    'ignored)))))
+
+;; '((nick date)...)
+(define icymm-seen-table '())
+
+(define (icymm-seen who)
+  (let ((r (assoc who icymm-seen-table)))
+    (and who
+         (format-date #f "~Y-~m-~d, ~H:~M:~S" (time->date (cadr r))))))
+
+(define (icymm-quit-callback msg)
+  (let* ((body (irc:message-body msg))
+         (match (string-search
+                 (format ":(~A)!.* (QUIT|PART)" icymm-irc-nick-regexp) body)))
+    (condition-case
+     (let* ((who (list-ref match 1))
+            (record (assoc who icymm-seen-table)))
+       (set! icymm-seen-table (cons (list who (current-time))
+                                    (if record
+                                        (remove record icymm-seen-table)
+                                      icymm-seen-table)))
+       (icymm-cache-save))
+     (err () 'ignored))))
 
 ;; TODO, maybe provide ,unalias.
 
@@ -498,7 +551,7 @@ corresponding phenomenon for each day."
 
 (define (icymm-iconv str from to)
   (with-input-from-pipe 
-   (format "echo ~A | iconv -f ~A -t ~A" str from to)
+   (format "echo ~A | iconv -f ~A -t ~A | xargs echo -n " str from to)
    read-string))
 
 (define (icymm-tell-timestamp)
@@ -517,6 +570,18 @@ corresponding phenomenon for each day."
          (format "curl -x ~A:~A ~A" proxy-server proxy-port url)
        (format "curl ~A" url)))
    read-string))
+
+(define (icymm-get-ip-location ip)
+  (let ((loc (with-input-from-pipe 
+              (format "ip_seek ~A ~A" icymm-ip-data ip)
+              read-string)))
+    (icymm-iconv (car (string-split loc "\n")) 'gbk 'utf-8)))
+
+(define (icymm-guess-city str)
+  ;; TODO: "省?" doesn't work, bug?
+  (let ((match (or (string-search "省(.+)市" str)
+                   (string-search "(.+)市" str))))
+    (and match (last match))))
 
 ;;; Main
 
@@ -604,6 +669,7 @@ corresponding phenomenon for each day."
                 (",alias"       ,icymm-alias-callback   alias)
                 (",w(eather)?"  ,icymm-weather-callback weather)
                 (",ip"          ,icymm-ip-callback      ip)
+                (",seen"        ,icymm-seen-callback    seen)
 
                 ("(靠|kao)[ \t!.。?]*$" ,icymm-dirty-callback dirty)
 
@@ -613,6 +679,16 @@ corresponding phenomenon for each day."
                               icymm-join-callback
                               command: "JOIN"
                               tag: 'join)
+
+    (irc:add-message-handler! icymm-connection
+                              icymm-quit-callback
+                              command: "QUIT"
+                              tag: 'quit)
+
+    (irc:add-message-handler! icymm-connection
+                              icymm-quit-callback
+                              command: "PART"
+                              tag: 'part)
 
     ;; default 放在最后就可以了？
     (icymm-add-privmsg-handler! (format "~A: [^,]+|~A :[^,]+" icymm-nick icymm-nick)
