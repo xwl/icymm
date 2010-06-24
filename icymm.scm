@@ -515,8 +515,7 @@ corresponding phenomenon for each day."
 
 (define (icymm-seen who)
   (let ((r (assoc who icymm-seen-table)))
-    (and who
-         (format-date #f "~Y-~m-~d, ~H:~M:~S" (time->date (cadr r))))))
+    (and r (format-date #f "~Y-~m-~d, ~H:~M:~S" (time->date (cadr r))))))
 
 (define (icymm-quit-callback msg)
   (let* ((body (irc:message-body msg))
@@ -619,11 +618,13 @@ corresponding phenomenon for each day."
                                   (usage))
                 (args:make-option (s server) #:required "Default is: irc.debian.org"
                                   (set! icymm-server arg))
+                (args:make-option (p port) #:required "Default is: 6667"
+                                  (set! icymm-port (string->number arg)))
                 (args:make-option (n nick) #:required "Default is: icymm"
                                   (set! icymm-nick arg))
-                (args:make-option (c channel) #:required "Default is: #emacs-cn"
-                                  (set! icymm-channel arg))
-                (args:make-option (p password) #:required "Default is: #f"
+                (args:make-option (c channel) #:required "Default is: emacs-cn"
+                                  (set! icymm-channel (string-append "#" arg)))
+                (args:make-option (P password) #:required "Default is: #f"
                                   (set! icymm-password arg))))
 
     (args:parse (command-line-arguments) opts)))
