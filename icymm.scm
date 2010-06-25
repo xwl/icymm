@@ -106,8 +106,10 @@
 
 (define (icymm-notice msg notice)
   (if (icymm-receiver-is-me? (irc:message-receiver msg))
-      (irc:notice icymm-connection notice (irc:message-sender msg))
-    (irc:notice icymm-connection notice)))
+      ;; (irc:notice icymm-connection notice (irc:message-sender msg))
+      (irc:say icymm-connection notice (irc:message-sender msg))
+    ;; (irc:notice icymm-connection notice)))
+    (irc:say icymm-connection notice)))
 
 (define (icymm-add-privmsg-handler! command callback tag)
   (irc:add-message-handler!
