@@ -363,7 +363,7 @@
                   (icymm-curl
                    (string-append 
                     "http://tinyurl.com/api-create.php?url=" url))
-                  ", ")
+                  " ")
                   "")))
 
        (find (lambda (el) 
