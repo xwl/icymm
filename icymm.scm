@@ -340,7 +340,7 @@
   (icymm-response msg "Emacs 之超级音频、视频播放器！赶快来用吧！=> http://www.gnu.org/software/emms"))
 
 (define (icymm-paste-callback msg)
-  (icymm-response msg "贴贴贴！=> M-x xwl-paste-ubuntu-cn (http://paste.ubuntu.org.cn/46163), http://paste.ubuntu.org.cn (支持图片), wgetpaste"))
+  (icymm-response msg "贴贴贴！=> M-x xwl-paste-ubuntu-cn ( http://paste.ubuntu.org.cn/46163 ), wgetpaste"))
 
 (define (icymm-url-callback msg)
   "Get title for url pasted in channel."
