@@ -569,8 +569,8 @@ corresponding phenomenon for each day."
    (let ((proxy-server (getenv "http_proxy"))
          (proxy-port (getenv "http_port")))
      (if (and proxy-server proxy-port)
-         (format "curl -x ~A:~A ~A" proxy-server proxy-port url)
-       (format "curl ~A" url)))
+         (format "curl -L -x ~A:~A ~A" proxy-server proxy-port url)
+       (format "curl -L ~A" url)))
    read-string))
 
 (define (icymm-get-ip-location ip)
