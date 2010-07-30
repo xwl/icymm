@@ -356,7 +356,7 @@
              (cadr 
               (string-search
                "([^\n ].*[^\n ])" 
-               (car ((sxpath '(// title *text*)) text)))))
+               (apply string-append ((sxpath '(// title *text*)) text)))))
             (tiny-url 
              (if (> (string-length url) 50) ; magic..
                  (string-append 
@@ -552,7 +552,7 @@ corresponding phenomenon for each day."
 
 (define (icymm-iconv str from to)
   (with-input-from-pipe 
-   (format "echo ~A | iconv -f ~A -t ~A | xargs echo -n " str from to)
+   (format "echo -n ~A | iconv -f ~A -t ~A" (qs str) from to)
    read-string))
 
 (define (icymm-tell-timestamp)
