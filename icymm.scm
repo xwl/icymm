@@ -106,8 +106,10 @@
 
 (define (icymm-notice msg notice)
   (if (icymm-receiver-is-me? (irc:message-receiver msg))
-      (irc:notice icymm-connection notice (irc:message-sender msg))
-    (irc:notice icymm-connection notice)))
+      ;; (irc:notice icymm-connection notice (irc:message-sender msg))
+      (irc:say icymm-connection notice (irc:message-sender msg))
+    ;; (irc:notice icymm-connection notice)))
+    (irc:say icymm-connection notice)))
 
 (define (icymm-add-privmsg-handler! command callback tag)
   (irc:add-message-handler!
@@ -357,7 +359,7 @@
              (cadr 
               (string-search
                "([^\n ].*[^\n ])" 
-               (car ((sxpath '(// title *text*)) text)))))
+               (apply string-append ((sxpath '(// title *text*)) text)))))
             (tiny-url 
              (if (> (string-length url) icymm-tiny-url-threshold)
                  (string-append 
@@ -553,7 +555,7 @@ corresponding phenomenon for each day."
 
 (define (icymm-iconv str from to)
   (with-input-from-pipe 
-   (format "echo ~A | iconv -f ~A -t ~A | xargs echo -n " str from to)
+   (format "echo -n ~A | iconv -f ~A -t ~A" (qs str) from to)
    read-string))
 
 (define (icymm-tell-timestamp)
