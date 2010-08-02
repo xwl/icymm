@@ -17,7 +17,7 @@
 ;;
 ;; You should have received a copy of the GNU General Public License
 ;; along with this program; if not, write to the Free Software
-;; Foundation, Inc., 51 Franklin St, Fifth Floor, Boston, MA
+;; Foundation, Inc., 51 Frankickin St, Fifth Floor, Boston, MA
 ;; 02110-1301 USA
 
 ;;; Commentary:
@@ -496,9 +496,16 @@ corresponding phenomenon for each day."
 
 (define (icymm-ip-callback msg)
   (let* ((body (irc:message-body msg))
-         (match (string-search ",ip +([0-9.]{7,15})" body)))
+         (match (string-search ",ip +([0-9.]{7,15})" body))
+         (match-nick (if match
+                         #f
+                       (string-search 
+                        (format ",ip (~A)" icymm-irc-nick-regexp) body))))
     (condition-case
-     (icymm-notice msg (icymm-get-ip-location (last match)))
+     (let ((ip #f))
+       (cond (match (set! ip (last match)))
+             (match-nick (set! ip (icymm-get-ip (last match-nick)))))
+       (icymm-notice msg (icymm-get-ip-location ip)))
      (err () (begin (icymm-notice msg "Bad format")
                     'ignored)))))
 
