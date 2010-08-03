@@ -350,8 +350,9 @@
          (match (string-search "(https?://[^ ]+)" body)))
     (condition-case 
      (let* ((url (cadr match))
-            (text (html->sxml (icymm-curl url)))
-            (charset #f)
+            (content-charset (icymm-curl url))
+            (text (html->sxml (car content-charset)))
+            (charset (cadr content-charset))
             (title
              (cadr 
               (string-search
@@ -360,22 +361,14 @@
             (tiny-url 
              (if (> (string-length url) 50) ; magic..
                  (string-append 
-                  (icymm-curl
-                   (string-append 
-                    "http://tinyurl.com/api-create.php?url=" url))
+                  (car 
+                   (icymm-curl
+                    (string-append 
+                     "http://tinyurl.com/api-create.php?url=" url)))
                   " ")
-                  "")))
-
-       (find (lambda (el) 
-               (let ((m (string-search "charset *= *([^ ].+[^ ])" el)))
-                 (if m (begin (set! charset (cadr m))
-                              #t)
-                   #f)))
-             ((sxpath '(// meta @ content *text*))text))
-
-       (when charset
-         (set! title (icymm-iconv title charset 'utf-8)))
-
+               "")))
+       
+       (set! title (icymm-iconv title charset 'utf-8))
        (icymm-notice msg (string-append tiny-url title)))
 
      (err () 'ignored))))
@@ -408,7 +401,7 @@
             (city-url (string-append
                        "http://search.weather.com.cn/static/url_gb.php?CityInfo=" 
                        city))
-            (code (cadr (string-search "([0-9]{9})\\." (icymm-curl city-url)))))
+            (code (cadr (string-search "([0-9]{9})\\." (car (icymm-curl city-url))))))
        (icymm-notice msg (icymm-weather-generate-result  
                           (icymm-weather-prepare-data-from-sxml code)
                           ;; (icymm-weather-prepare-data-from-json city code)
@@ -423,7 +416,7 @@
 
 (define (icymm-weather-prepare-data-from-sxml code)
   (let* ((url (format "http://www.weather.com.cn/html/weather/~A.shtml" code))
-         (sxml (html->sxml (icymm-curl url)))
+         (sxml (html->sxml (car (icymm-curl url))))
          (city (icymm-weather-extract-city sxml))
          (temps (icymm-weather-extract-temperatures sxml))
          (phens (icymm-weather-extract-phenomenons sxml)))
@@ -485,7 +478,7 @@ corresponding phenomenon for each day."
 
 (define (icymm-weather-prepare-data-from-json code)
   (let* ((json-url (format "http://m.weather.com.cn/data/~A.html" code))
-         (json (with-input-from-string (icymm-curl json-url) json-read))
+         (json (with-input-from-string (car (icymm-curl json-url)) json-read))
          (lst (vector->list (cdr (vector-ref json 0))))
          (matcher (lambda (match) (lambda (el) (string= (car el) match)))))
     (map (lambda (str) (cdr (find (matcher str) lst)))
@@ -564,13 +557,29 @@ corresponding phenomenon for each day."
                                                          (cdr lst)))))
 (define (icymm-curl url)
   ;; (with-input-from-request url #f read-string)
-  (with-input-from-pipe
-   (let ((proxy-server (getenv "http_proxy"))
-         (proxy-port (getenv "http_port")))
-     (if (and proxy-server proxy-port)
-         (format "curl -L -x ~A:~A ~A" proxy-server proxy-port url)
-       (format "curl -L ~A" url)))
-   read-string))
+  (let* ((s (with-input-from-pipe
+             (let ((proxy-server (getenv "http_proxy"))
+                   (proxy-port (getenv "http_port")))
+               (if (and proxy-server proxy-port)
+                   (format "curl --include -L -x ~A:~A ~A" proxy-server proxy-port url)
+                 (format "curl --include -L ~A" url)))
+             read-string))
+         (positions 
+          (let ((p (string-search-positions "HTTP/1.1 200 OK" s)))
+            (and p (string-search-positions "\r\n\r\n" s (cadar p)))))
+         (end (cadar positions))
+         (body (substring s end))
+         (charset 
+          (let ((c (string-search "Content-Type:.*charset *= *([-a-zA-Z0-9]+)\r\n"
+                                  (substring s 0 end))))
+            (if c 
+                (last c)
+              (let ((m (string-search "charset *= *([-a-zA-Z0-9]+)" body)))
+                (if m 
+                    (last m)
+                  "utf-8"))))))
+
+    (list body charset)))
 
 (define (icymm-get-ip-location ip)
   (let ((loc (with-input-from-pipe 
