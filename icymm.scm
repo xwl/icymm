@@ -96,13 +96,13 @@
 ;;; IRC commands and functions
 
 (define (icymm-response msg response)
-;;   (display (format "(sender, receiver): (~A, ~A)\n"
-;;                    (irc:message-sender msg)
-;;                    (irc:message-receiver msg)))
-;;   (display (format "body: ~A\n" (irc:message-body msg)))
-  (if (icymm-receiver-is-me? (irc:message-receiver msg))
+  ;;   (display (format "(sender, receiver): (~A, ~A)\n"
+  ;;                    (irc:message-sender msg)
+  ;;                    (irc:message-receiver msg)))
+  ;;   (display (format "body: ~A\n" (irc:message-body msg)))
+  (if (and msg (icymm-receiver-is-me? (irc:message-receiver msg)))
       (irc:say icymm-connection response (irc:message-sender msg))
-      (irc:say icymm-connection response)))
+    (irc:say icymm-connection response)))
 
 (define (icymm-notice msg notice)
   (if (icymm-receiver-is-me? (irc:message-receiver msg))
@@ -133,11 +133,18 @@
 
 (define (icymm-get-ip nick)
   (irc:command icymm-connection (string-append "whois " nick))
-  (cadr (icymm-wait
-         (string-append 
-          nick
-          " ([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}) :actually using host"
-          ))))
+  (let* ((match 
+          (icymm-wait
+           (format 
+            "(338|401) ~A ~A ([0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3}\\.[0-9]{1,3})? ?:(.+)"
+            icymm-nick nick)))
+         (status (list-ref match 1)))
+    (cond 
+     ((string= status "401")
+      (write match)
+      (icymm-response #f (last match))
+      #f)
+     ((string= status "338") (list-ref match 2)))))
 
 (define (icymm-names)
   (irc:command icymm-connection (string-append "names " icymm-channel))
@@ -505,7 +512,8 @@ corresponding phenomenon for each day."
      (let ((ip #f))
        (cond (match (set! ip (last match)))
              (match-nick (set! ip (icymm-get-ip (last match-nick)))))
-       (icymm-notice msg (icymm-get-ip-location ip)))
+       (when ip
+         (icymm-notice msg (icymm-get-ip-location ip))))
      (err () (begin (icymm-notice msg "Bad format")
                     'ignored)))))
 
