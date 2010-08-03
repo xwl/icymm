@@ -131,7 +131,7 @@
   (or (string-search regexp (irc:message-body (irc:wait icymm-connection)))
       (icymm-wait regexp)))
 
-(define (icymm-get-ip nick)
+(define (icymm-get-ip msg nick)
   (irc:command icymm-connection (string-append "whois " nick))
   (let* ((match 
           (icymm-wait
@@ -141,8 +141,7 @@
          (status (list-ref match 1)))
     (cond 
      ((string= status "401")
-      (write match)
-      (icymm-response #f (last match))
+      (icymm-response msg (last match))
       #f)
      ((string= status "338") (list-ref match 2)))))
 
@@ -410,7 +409,7 @@
                     (let ((sender (irc:message-sender msg)))
                       (list 
                        (or (icymm-guess-city
-                            (icymm-get-ip-location (icymm-get-ip sender)))
+                            (icymm-get-ip-location (icymm-get-ip msg sender)))
                            "北京")))
                   (string-search ",w(eather)? +([^ ]+)" body))))
     (condition-case 
@@ -511,7 +510,7 @@ corresponding phenomenon for each day."
     (condition-case
      (let ((ip #f))
        (cond (match (set! ip (last match)))
-             (match-nick (set! ip (icymm-get-ip (last match-nick)))))
+             (match-nick (set! ip (icymm-get-ip msg (last match-nick)))))
        (when ip
          (icymm-notice msg (icymm-get-ip-location ip))))
      (err () (begin (icymm-notice msg "Bad format")
