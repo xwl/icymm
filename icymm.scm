@@ -344,6 +344,9 @@
 (define (icymm-paste-callback msg)
   (icymm-response msg "贴贴贴！=> M-x xwl-paste-ubuntu-cn (http://paste.ubuntu.org.cn/46163), http://paste.ubuntu.org.cn (支持图片), wgetpaste"))
 
+;; Shorten url longer than this value.
+(define icymm-tiny-url-threshold 60)
+
 (define (icymm-url-callback msg)
   "Get title for url pasted in channel."
   (let* ((body (irc:message-body msg))
@@ -359,7 +362,7 @@
                "([^\n ].*[^\n ])" 
                (apply string-append ((sxpath '(// title *text*)) text)))))
             (tiny-url 
-             (if (> (string-length url) 50) ; magic..
+             (if (> (string-length url) icymm-tiny-url-threshold)
                  (string-append 
                   (car 
                    (icymm-curl
