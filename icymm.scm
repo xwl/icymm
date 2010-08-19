@@ -353,6 +353,9 @@
 ;; Shorten url longer than this value.
 (define icymm-tiny-url-threshold 60)
 
+;; Shorten url longer than this value.
+(define icymm-tiny-url-threshold 60)
+
 (define (icymm-url-callback msg)
   "Get title for url pasted in channel."
   (let* ((body (irc:message-body msg))
@@ -560,9 +563,13 @@ corresponding phenomenon for each day."
    (string-append "echo " str " | iconv -f utf-8 -t gb18030")
    read-string))
 
+;; temp bug fix for `qs', which fails to escaping "|".
+(define (icymm-qs str)
+  (string-substitute "\\|" "\\|" (qs str) 'all))
+
 (define (icymm-iconv str from to)
   (with-input-from-pipe 
-   (format "echo -n ~A | iconv -f ~A -t ~A" (qs str) from to)
+   (format "echo -n ~A | iconv -f ~A -t ~A" (icymm-qs str) from to)
    read-string))
 
 (define (icymm-tell-timestamp)
