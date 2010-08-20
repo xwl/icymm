@@ -680,8 +680,8 @@ corresponding phenomenon for each day."
                                            nick: icymm-nick
                                            password: icymm-password
                                            real-name: icymm-real-name
-                                           log-traffic: (when icymm-logging-p
-                                                          (current-output-port))
+                                           log-traffic: (and icymm-logging-p
+                                                             (current-output-port))
                                            ))
 
     (irc:connect icymm-connection)
