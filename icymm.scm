@@ -368,7 +368,7 @@
             (title
              (cadr 
               (string-search
-               "([^\n ].*[^\n ])" 
+               "([^\r\n\t ].*[^\r\n\t ])" 
                (apply string-append ((sxpath '(// title *text*)) text)))))
             (tiny-url 
              (if (> (string-length url) icymm-tiny-url-threshold)
