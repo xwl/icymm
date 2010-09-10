@@ -366,9 +366,9 @@
             (text (html->sxml (car content-charset)))
             (charset (cadr content-charset))
             (title
-             (cadr 
-              (string-search
-               "([^\r\n\t ].*[^\r\n\t ])" 
+             (string-trim-both
+              (string-substitute
+               "[\r\n\t ]+" " "  
                (apply string-append ((sxpath '(// title *text*)) text)))))
             (tiny-url 
              (if (> (string-length url) icymm-tiny-url-threshold)
