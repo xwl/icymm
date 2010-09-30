@@ -208,14 +208,12 @@
   "Check `icymm-aliases' to see whether NICK has any other aliases online."
   (let ((aliases (icymm-alias-find nick))
         (names (icymm-names)))
-    ;; (display names) (newline)
-    ;; (display nick) (newline)
     (cond ((member nick names)
            nick)
-          (aliases
+          ((not (null? aliases))
            (let loop ((ali aliases))
-             ;; (print ali) (newline)
-             (cond ((not (list? ali))
+             ;; (write ali) (newline)
+             (cond ((or (not (list? ali)) (null? ali))
                     #f)
                    ((member (car ali) names)
                     ;; (print "..") (print (car ali)) (newline)
@@ -734,7 +732,6 @@ corresponding phenomenon for each day."
     ;; For debug+  Run this program in csi, then we can debug and modify it on the fly!!
     ;; (thread-start! (lambda () (irc:run-message-loop icymm-connection debug: #t)))
 
-    ;; (irc:run-message-loop icymm-connection debug: #t)
     (irc:run-message-loop icymm-connection)
     ))
 
