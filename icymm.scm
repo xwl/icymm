@@ -413,8 +413,8 @@
                        city))
             (code (cadr (string-search "([0-9]{9})\\." (car (icymm-curl city-url))))))
        (icymm-notice msg (icymm-weather-generate-result  
-                          (icymm-weather-prepare-data-from-sxml code)
-                          ;; (icymm-weather-prepare-data-from-json city code)
+                          ;; (icymm-weather-prepare-data-from-sxml code)
+                          (icymm-weather-prepare-data-from-json code)
                           (format "http://www.weather.com.cn/html/weather/~A.shtml" code)
                           )))
      (err () (begin (icymm-notice msg "City unknown or bad format")
@@ -422,7 +422,8 @@
 
 (define (icymm-weather-generate-result data url)
   "(city weather1 temp1 weather2 temp2 weather3 temp3)."
-  (apply format "~A: ~A ~A / 明天 ~A ~A / 后天 ~A ~A, ~A" (append data (list url))))
+  (apply format "~A: ~A ~A / 明天 ~A ~A / 后天 ~A ~A, ~A" 
+         (append data (list url))))
 
 (define (icymm-weather-prepare-data-from-sxml code)
   (let* ((url (format "http://www.weather.com.cn/html/weather/~A.shtml" code))
@@ -486,13 +487,49 @@ corresponding phenomenon for each day."
                      (if m (cadr m) #f)))
                  phenomenons))))
 
+;; '("city" "weather1" "temp1" "weather2" "temp2" "weather3" "temp3")
 (define (icymm-weather-prepare-data-from-json code)
   (let* ((json-url (format "http://m.weather.com.cn/data/~A.html" code))
          (json (with-input-from-string (car (icymm-curl json-url)) json-read))
          (lst (vector->list (cdr (vector-ref json 0))))
-         (matcher (lambda (match) (lambda (el) (string= (car el) match)))))
-    (map (lambda (str) (cdr (find (matcher str) lst)))
-         '("city" "weather1" "temp1" "weather2" "temp2" "weather3" "temp3"))))
+         (matcher (lambda (match) (lambda (el) (string= (car el) match))))
+         (ret (map (lambda (str) (cdr (find (matcher str) lst)))
+                   '("city" "weather1" "temp1" "weather2" "temp2" "weather3" "temp3")))
+         (weathers (map (lambda (i) (list-ref ret i)) '(1 3 5)))
+         (temperatures (map (lambda (i) (list-ref ret i)) '(2 4 6))))
+         
+    ;; Night time now, daytime info has been shift left off.
+    (when (apply < (map (lambda (temp)    
+                          ;; FIXME: string-trim-right won't work for unicodes?
+                          (string->number (car (string-split temp "℃"))))
+                        (string-split (list-ref ret 2) "~")))
+      (set! weathers
+            (apply append
+                   (map (lambda (w)
+                          (let ((pair (string-split w "转")))
+                            (if (= (length pair) 1) (list w w) pair)))
+                        weathers)))
+      (set-cdr! weathers 
+                (map (lambda (day-night)
+                       (let ((d (list-ref weathers (car day-night)))
+                             (n (list-ref weathers (cadr day-night))))
+                         (if (string= d n) d (string-append d "转" n))))
+                     '((1 2) (3 4))))
+
+      (set! temperatures
+            (apply append
+                   (map (lambda (t) (string-split t "~")) temperatures)))
+      (set-cdr! temperatures 
+                (map (lambda (day-night)
+                       (string-append (list-ref temperatures (car day-night))
+                               "~" 
+                               (list-ref temperatures (cadr day-night))))
+                     '((1 2) (3 4))))
+      
+      (set-cdr! ret (apply append (map (lambda (w t) (list w t)) 
+                                       weathers
+                                       temperatures))))
+    ret))
 
 (define (icymm-ip-callback msg)
   (let* ((body (irc:message-body msg))
