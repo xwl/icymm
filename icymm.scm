@@ -411,10 +411,11 @@
             (city-url (string-append
                        "http://search.weather.com.cn/static/url_gb.php?CityInfo=" 
                        city))
-            (code (cadr (string-search "([0-9]{9})\\." (car (icymm-curl city-url))))))
+            (code (cadr (string-search "([0-9]{9})\\." (car (icymm-curl city-url)))))
+            (days 3))
        (icymm-notice msg (icymm-weather-generate-result  
                           ;; (icymm-weather-prepare-data-from-sxml code)
-                          (icymm-weather-prepare-data-from-json code)
+                          (icymm-weather-prepare-data-from-json code days)
                           (format "http://www.weather.com.cn/html/weather/~A.shtml" code)
                           )))
      (err () (begin (icymm-notice msg "City unknown or bad format")
@@ -487,49 +488,58 @@ corresponding phenomenon for each day."
                      (if m (cadr m) #f)))
                  phenomenons))))
 
-;; '("city" "weather1" "temp1" "weather2" "temp2" "weather3" "temp3")
-(define (icymm-weather-prepare-data-from-json code)
+;; Return: '("city" "weather1" "temp1" "weather2" "temp2"...)
+(define (icymm-weather-prepare-data-from-json code days)
   (let* ((json-url (format "http://m.weather.com.cn/data/~A.html" code))
          (json (with-input-from-string (car (icymm-curl json-url)) json-read))
          (lst (vector->list (cdr (vector-ref json 0))))
-         (matcher (lambda (match) (lambda (el) (string= (car el) match))))
-         (ret (map (lambda (str) (cdr (find (matcher str) lst)))
-                   '("city" "weather1" "temp1" "weather2" "temp2" "weather3" "temp3")))
-         (weathers (map (lambda (i) (list-ref ret i)) '(1 3 5)))
-         (temperatures (map (lambda (i) (list-ref ret i)) '(2 4 6))))
-         
+         (match (lambda (match) (lambda (el) (string= (car el) match))))
+         (get-match (lambda (s) (cdr (find (match s) lst))))
+
+         (weathers (map get-match
+                        (map (lambda (i) (format "weather~A" i))
+                             (iota days 1))))
+         (temperatures (map get-match
+                            (map (lambda (i) (format "temp~A" i))
+                                 (iota days 1)))))
+
     ;; Night time now, daytime info has been shift left off.
     (when (apply < (map (lambda (temp)    
                           ;; FIXME: string-trim-right won't work for unicodes?
                           (string->number (car (string-split temp "℃"))))
-                        (string-split (list-ref ret 2) "~")))
-      (set! weathers
-            (apply append
-                   (map (lambda (w)
-                          (let ((pair (string-split w "转")))
-                            (if (= (length pair) 1) (list w w) pair)))
-                        weathers)))
-      (set-cdr! weathers 
-                (map (lambda (day-night)
-                       (let ((d (list-ref weathers (car day-night)))
-                             (n (list-ref weathers (cadr day-night))))
-                         (if (string= d n) d (string-append d "转" n))))
-                     '((1 2) (3 4))))
+                        (string-split (car temperatures) "~")))
 
-      (set! temperatures
-            (apply append
-                   (map (lambda (t) (string-split t "~")) temperatures)))
-      (set-cdr! temperatures 
-                (map (lambda (day-night)
-                       (string-append (list-ref temperatures (car day-night))
-                               "~" 
-                               (list-ref temperatures (cadr day-night))))
-                     '((1 2) (3 4))))
-      
-      (set-cdr! ret (apply append (map (lambda (w t) (list w t)) 
-                                       weathers
-                                       temperatures))))
-    ret))
+      (let ((unfold-it (lambda (func)
+                         (unfold (lambda (i)  (> i (- days 1)))
+                                 (lambda (i) (func i))
+                                 (lambda (i) (+ i 1))
+                                 1))))
+
+        (set! weathers
+              (append-map (lambda (w)
+                            (let ((pair (string-split w "转")))
+                              (if (null? (cdr pair)) (list w w) pair)))
+                          weathers))
+
+        (set-cdr! weathers (unfold-it 
+                            (lambda (i) 
+                              (let ((d (list-ref weathers (- (* i 2) 1)))
+                                    (n (list-ref weathers (* i 2))))
+                                (if (string= d n) d (string-append d "转" n))))))
+
+        (set! temperatures
+              (append-map (lambda (t) (string-split t "~")) temperatures))
+
+        (set-cdr! temperatures (unfold-it
+                                (lambda (i) 
+                                  (string-append
+                                   (list-ref temperatures (- (* i 2) 1))
+                                   "~"
+                                   (list-ref temperatures (* i 2))))))))
+
+    (cons (get-match "city") (append-map (lambda (w t) (list w t)) 
+                                         weathers
+                                         temperatures))))
 
 (define (icymm-ip-callback msg)
   (let* ((body (irc:message-body msg))
